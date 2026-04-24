@@ -25,7 +25,13 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <div className="login-logo">🍺</div>
+        <div className="login-logo">
+          <img
+            src="./logo.png"
+            alt="HBC La Fillière"
+            style={{ width: 90, height: 90, objectFit: 'contain' }}
+          />
+        </div>
         <h1 className="login-title">HBC La Fillière</h1>
         <p className="login-sub">Gestion des buvettes — Connexion</p>
 
