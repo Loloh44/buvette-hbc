@@ -1,0 +1,157 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { fmt } from '../lib/sumup'
+
+export default function ProduitsPage() {
+  const [data, setData] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [annee, setAnnee] = useState(new Date().getFullYear())
+  const [catFilter, setCatFilter] = useState('Tous')
+  const [semaines, setSemaines] = useState([])
+  const [semaineFilter, setSemaineFilter] = useState('')
+
+  useEffect(() => {
+    loadData()
+    loadSemaines()
+  }, [annee])
+
+  async function loadSemaines() {
+    const { data } = await supabase.from('semaines').select('id, numero, theme, date_debut').eq('annee', annee).order('numero')
+    setSemaines(data || [])
+  }
+
+  async function loadData() {
+    setLoading(true)
+    let q = supabase
+      .from('v_ca_par_produit')
+      .select('*')
+
+    if (semaineFilter) {
+      q = q.eq('semaine_id', semaineFilter)
+    } else {
+      const { data: sems } = await supabase.from('semaines').select('id').eq('annee', annee)
+      if (sems?.length) {
+        q = q.in('semaine_id', sems.map(s => s.id))
+      }
+    }
+
+    const { data: rows } = await q
+
+    // Aggregate by produit
+    const byProduit = {}
+    rows?.forEach(r => {
+      if (!byProduit[r.produit]) byProduit[r.produit] = { produit: r.produit, categorie: r.categorie, qte: 0, ca: 0, cout: 0 }
+      byProduit[r.produit].qte += r.quantite_vendue || 0
+      byProduit[r.produit].ca += r.ca || 0
+      byProduit[r.produit].cout += r.cout_achat || 0
+    })
+
+    setData(Object.values(byProduit).sort((a, b) => b.ca - a.ca))
+    setLoading(false)
+  }
+
+  useEffect(() => { loadData() }, [semaineFilter, annee])
+
+  const cats = ['Tous', ...new Set(data.map(d => d.categorie).filter(Boolean))]
+  const filtered = catFilter === 'Tous' ? data : data.filter(d => d.categorie === catFilter)
+
+  const totCA = filtered.reduce((s, d) => s + d.ca, 0)
+  const totCout = filtered.reduce((s, d) => s + d.cout, 0)
+  const totMarge = totCA - totCout
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <p className="page-title">Produits</p>
+          <p className="page-subtitle">Quantités vendues et marges par article</p>
+        </div>
+        <div className="flex-gap">
+          <select
+            style={{ padding: '6px 10px', border: '1px solid var(--gray-300)', borderRadius: 6, fontSize: 13 }}
+            value={annee} onChange={e => { setAnnee(+e.target.value); setSemaineFilter('') }}
+          >
+            {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select
+            style={{ padding: '6px 10px', border: '1px solid var(--gray-300)', borderRadius: 6, fontSize: 13 }}
+            value={semaineFilter} onChange={e => setSemaineFilter(e.target.value)}
+          >
+            <option value="">Toute la saison</option>
+            {semaines.map(s => <option key={s.id} value={s.id}>S{s.numero} — {s.theme || s.date_debut}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="page-body">
+        <div className="flex-gap mb-16">
+          {cats.map(c => (
+            <button
+              key={c}
+              className={'btn btn-sm' + (catFilter === c ? ' btn-primary' : '')}
+              onClick={() => setCatFilter(c)}
+            >{c}</button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="loading-page"><div className="spinner" /></div>
+        ) : (
+          <div className="card">
+            <div className="flex-between mb-16">
+              <div className="card-title" style={{ marginBottom: 0 }}>
+                {filtered.length} produits
+              </div>
+              <div className="flex-gap text-sm">
+                <span>CA : <strong>{fmt(totCA)}</strong></span>
+                <span>Achats : <strong className="negative">{fmt(-totCout)}</strong></span>
+                <span>Marge : <strong style={{ color: totMarge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(totMarge)}</strong></span>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produit</th>
+                    <th>Catégorie</th>
+                    <th className="num">Qté vendue</th>
+                    <th className="num">CA</th>
+                    <th className="num">Coût achat</th>
+                    <th className="num">Marge</th>
+                    <th className="num">Marge %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(d => {
+                    const marge = d.ca - d.cout
+                    const margePct = d.ca ? marge / d.ca : null
+                    return (
+                      <tr key={d.produit}>
+                        <td style={{ fontWeight: 500 }}>{d.produit}</td>
+                        <td><span className="badge badge-gray">{d.categorie}</span></td>
+                        <td className="num">{Math.round(d.qte)}</td>
+                        <td className="num">{fmt(d.ca)}</td>
+                        <td className="num">{d.cout ? <span className="negative">{fmt(-d.cout)}</span> : '—'}</td>
+                        <td className={'num ' + (marge >= 0 ? 'positive' : 'negative')}>{fmt(marge)}</td>
+                        <td className={'num ' + (margePct !== null && margePct >= 0 ? 'positive' : 'negative')}>
+                          {margePct !== null ? `${Math.round(margePct * 100)}%` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="tr-total">
+                    <td colSpan={3}>Total</td>
+                    <td className="num">{fmt(totCA)}</td>
+                    <td className="num negative">{fmt(-totCout)}</td>
+                    <td className={'num ' + (totMarge >= 0 ? 'positive' : 'negative')}>{fmt(totMarge)}</td>
+                    <td className="num">{totCA ? `${Math.round(totMarge / totCA * 100)}%` : '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
