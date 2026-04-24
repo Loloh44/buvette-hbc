@@ -22,7 +22,11 @@ export default function Layout() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div style={{ fontSize: 28, marginBottom: 6 }}>🍺</div>
+          <img
+            src="./logo.png"
+            alt="HBC La Fillière"
+            style={{ width: 70, height: 70, objectFit: 'contain', marginBottom: 8 }}
+          />
           <h1>HBC La Fillière</h1>
           <p>Gestion des buvettes</p>
         </div>
