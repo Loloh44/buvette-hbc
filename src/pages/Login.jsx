@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import logo from '../../public/logo.png'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -28,9 +27,10 @@ export default function LoginPage() {
       <div className="login-card">
         <div className="login-logo">
           <img
-            src={logo}
+            src="logo.png"
             alt="HBC La Fillière"
             style={{ width: 100, height: 100, objectFit: 'contain' }}
+            onError={e => { e.target.style.display = 'none' }}
           />
         </div>
         <h1 className="login-title">HBC La Fillière</h1>
@@ -41,33 +41,15 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="form-group">
             <label className="form-label">Email</label>
-            <input
-              type="email"
-              className="form-input"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="tresorier@club.fr"
-              required
-              autoFocus
-            />
+            <input type="email" className="form-input" value={email}
+              onChange={e => setEmail(e.target.value)} placeholder="tresorier@club.fr" required autoFocus />
           </div>
           <div className="form-group">
             <label className="form-label">Mot de passe</label>
-            <input
-              type="password"
-              className="form-input"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+            <input type="password" className="form-input" value={password}
+              onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
           </div>
-          <button
-            type="submit"
-            className="btn btn-primary btn-lg"
-            disabled={loading}
-            style={{ marginTop: 4 }}
-          >
+          <button type="submit" className="btn btn-primary btn-lg" disabled={loading} style={{ marginTop: 4 }}>
             {loading ? <span className="spinner" /> : '🔑'} Se connecter
           </button>
         </form>
