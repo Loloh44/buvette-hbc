@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/sumup'
 import { useSortable } from '../hooks/useSortable.jsx'
@@ -12,14 +13,24 @@ const CATEGORIES = ['Boissons', 'Snacking', 'Boutique', 'Marche de Noel', 'Dons'
 const CAT_ICONS = { Boissons: '🍺', Snacking: '🥐', Boutique: '👕', 'Marche de Noel': '🎄', Dons: '💝', Inconnu: '❓' }
 const VIOLET = '#6B3FA0'
 
+function formatSemaine(annee, numero) {
+  return `${annee} S${String(numero).padStart(2, '0')}`
+}
+
 export default function BilanPage() {
+  const [searchParams] = useSearchParams()
   const [semaineId, setSemaineId] = useState('')
   const [semaine, setSemaine] = useState(null)
   const [bilan, setBilan] = useState(null)
   const [loading, setLoading] = useState(false)
   const [produitsData, setProduitsData] = useState([])
   const { sorted: sortedProduits, Th: ThProd } = useSortable(produitsData, 'ca', 'desc')
-  const bilanRef = useRef()
+
+  // Auto-select semaine from URL param
+  useEffect(() => {
+    const s = searchParams.get('s')
+    if (s) setSemaineId(s)
+  }, [])
 
   useEffect(() => { if (semaineId) loadBilan() }, [semaineId])
 
@@ -73,7 +84,6 @@ export default function BilanPage() {
     const marge = totalCA - totalAchats + fraisSumup
     const especes = paiements['Espèces']?.montant || 0
 
-    // Par produit
     const byProduit = {}
     ventesOnly.forEach(v => {
       const key = v.description || 'Inconnu'
@@ -95,11 +105,7 @@ export default function BilanPage() {
     setLoading(false)
   }
 
-  function handlePrint() {
-    window.print()
-  }
-
-  // Data for charts
+  // Chart data
   const catChartData = bilan ? Object.entries(bilan.catStats)
     .filter(([, d]) => d.ca > 0)
     .map(([cat, d]) => ({ name: cat, value: Math.round(d.ca) }))
@@ -109,7 +115,7 @@ export default function BilanPage() {
     .filter(p => p.qte > 0)
     .sort((a, b) => b.qte - a.qte)
     .slice(0, 12)
-    .map(p => ({ name: p.produit.length > 14 ? p.produit.slice(0, 14) + '…' : p.produit, value: Math.round(p.qte), cat: p.cat }))
+    .map(p => ({ name: p.produit.length > 14 ? p.produit.slice(0, 14) + '…' : p.produit, value: Math.round(p.qte) }))
 
   if (loading) return <div className="loading-page"><div className="spinner" /><span>Calcul du bilan…</span></div>
 
@@ -127,19 +133,15 @@ export default function BilanPage() {
       <div className="page-header no-print">
         <div>
           <p className="page-title">Bilan hebdomadaire</p>
-          <p className="page-subtitle">Récapitulatif complet pour le bureau</p>
+          <p className="page-subtitle">{semaine ? formatSemaine(semaine.annee, semaine.numero) + (semaine.theme ? ' — ' + semaine.theme : '') : 'Sélectionnez une semaine'}</p>
         </div>
         <div className="flex-gap">
           <SemaineSelector value={semaineId} onChange={setSemaineId} />
-          {bilan && (
-            <button className="btn btn-primary" onClick={handlePrint}>
-              🖨️ Imprimer / Exporter PDF
-            </button>
-          )}
+          {bilan && <button className="btn btn-primary" onClick={() => window.print()}>🖨️ Imprimer / PDF</button>}
         </div>
       </div>
 
-      <div className="page-body" ref={bilanRef}>
+      <div className="page-body">
         {!semaineId && (
           <div className="empty-state">
             <div className="empty-state-icon">📋</div>
@@ -153,7 +155,7 @@ export default function BilanPage() {
             <div className="card mb-16" style={{ background: 'var(--green)', color: 'white' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>Semaine n°{semaine.numero} — {semaine.theme || 'Buvette'}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{formatSemaine(semaine.annee, semaine.numero)} — {semaine.theme || 'Buvette'}</div>
                   <div style={{ opacity: .8, fontSize: 13 }}>Du {semaine.date_debut} au {semaine.date_fin}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -184,7 +186,7 @@ export default function BilanPage() {
               </div>
             </div>
 
-            {/* GRAPHIQUE 1 — CA par catégorie */}
+            {/* Graphique 1 — CA par catégorie */}
             <div className="card mb-16">
               <div className="card-title">Répartition du chiffre d'affaires — {fmt(bilan.totalCA)}</div>
               <ResponsiveContainer width="100%" height={260}>
@@ -201,7 +203,7 @@ export default function BilanPage() {
               </ResponsiveContainer>
             </div>
 
-            {/* GRAPHIQUE 2 — Quantités vendues */}
+            {/* Graphique 2 — Quantités vendues */}
             <div className="card mb-16">
               <div className="card-title">Quantités vendues par produit (top 12)</div>
               <ResponsiveContainer width="100%" height={280}>
@@ -246,7 +248,6 @@ export default function BilanPage() {
               </div>
 
               <div>
-                {/* Paiements */}
                 <div className="card mb-16">
                   <div className="card-title">Moyens de paiement</div>
                   <table>
@@ -263,8 +264,6 @@ export default function BilanPage() {
                     </tbody>
                   </table>
                 </div>
-
-                {/* Espèces */}
                 <div className="card">
                   <div className="card-title">Récap espèces</div>
                   <table>
@@ -284,7 +283,7 @@ export default function BilanPage() {
               <div className="card-title">Détail des achats</div>
               {bilan.achats.length === 0 ? <p className="text-muted text-sm">Aucun achat saisi</p> : (
                 <table>
-                  <thead><tr><th>Date</th><th>Fournisseur</th><th>N° Facture</th><th>Article</th><th className="num">TTC</th><th>Produits imputés</th></tr></thead>
+                  <thead><tr><th>Date</th><th>Fournisseur</th><th>N° Facture</th><th>Article</th><th className="num">TTC</th><th>Imputations</th></tr></thead>
                   <tbody>
                     {bilan.achats.map(a => (
                       <tr key={a.id}>
