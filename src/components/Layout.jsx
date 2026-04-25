@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import LOGO from '../assets/logo.jsx'
+import LOGO from '../assets/logo.js'
 
 const NAV = [
   { to: '/dashboard', icon: '📊', label: 'Tableau de bord' },
