@@ -5,11 +5,11 @@ import LoginPage from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import ImportPage from './pages/Import.jsx'
 import AchatsPage from './pages/Achats.jsx'
+import ImportAchatsPage from './pages/ImportAchats.jsx'
 import BilanPage from './pages/Bilan.jsx'
 import HistoriquePage from './pages/Historique.jsx'
 import ProduitsPage from './pages/Produits.jsx'
 import SemainesPage from './pages/Semaines.jsx'
-import TicketPage from './pages/Ticket.jsx'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -28,7 +28,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="achats" element={<AchatsPage />} />
-          <Route path="ticket" element={<TicketPage />} />
+          <Route path="import-achats" element={<ImportAchatsPage />} />
           <Route path="bilan" element={<BilanPage />} />
           <Route path="historique" element={<HistoriquePage />} />
           <Route path="produits" element={<ProduitsPage />} />
