@@ -1,11 +1,13 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import logo from '../../public/logo.png'
 
 const NAV = [
   { to: '/dashboard', icon: '📊', label: 'Tableau de bord' },
   { to: '/bilan', icon: '📋', label: 'Bilan semaine' },
   { to: '/import', icon: '📂', label: 'Import SumUp' },
   { to: '/achats', icon: '🛒', label: 'Saisie achats' },
+  { to: '/ticket', icon: '📷', label: 'Scan ticket' },
   { to: '/historique', icon: '📅', label: 'Historique' },
   { to: '/produits', icon: '🍺', label: 'Produits' },
   { to: '/semaines', icon: '⚙️', label: 'Semaines' },
@@ -23,9 +25,9 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <img
-            src="./logo.png"
+            src={logo}
             alt="HBC La Fillière"
-            style={{ width: 70, height: 70, objectFit: 'contain', marginBottom: 8 }}
+            style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 8 }}
           />
           <h1>HBC La Fillière</h1>
           <p>Gestion des buvettes</p>
