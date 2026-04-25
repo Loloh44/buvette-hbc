@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import logo from '../../public/logo.png'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -27,9 +28,9 @@ export default function LoginPage() {
       <div className="login-card">
         <div className="login-logo">
           <img
-            src="./logo.png"
+            src={logo}
             alt="HBC La Fillière"
-            style={{ width: 90, height: 90, objectFit: 'contain' }}
+            style={{ width: 100, height: 100, objectFit: 'contain' }}
           />
         </div>
         <h1 className="login-title">HBC La Fillière</h1>

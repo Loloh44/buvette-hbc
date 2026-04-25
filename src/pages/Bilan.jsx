@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/sumup'
+import { useSortable } from '../hooks/useSortable.jsx'
 import SemaineSelector from '../components/SemaineSelector.jsx'
 
 const CATEGORIES = ['Boissons', 'Snacking', 'Boutique', 'Marche de Noel', 'Dons', 'Inconnu']
@@ -12,13 +13,16 @@ export default function BilanPage() {
   const [bilan, setBilan] = useState(null)
   const [loading, setLoading] = useState(false)
 
+  // Sortable produits
+  const [produitsData, setProduitsData] = useState([])
+  const { sorted: sortedProduits, Th: ThProd } = useSortable(produitsData, 'ca', 'desc')
+
   useEffect(() => {
     if (semaineId) loadBilan()
   }, [semaineId])
 
   async function loadBilan() {
     setLoading(true)
-
     const { data: sem } = await supabase.from('semaines').select('*').eq('id', semaineId).single()
     setSemaine(sem)
 
@@ -35,12 +39,10 @@ export default function BilanPage() {
     if (!ventes) { setLoading(false); return }
 
     const ventesOnly = ventes.filter(v => v.type_transaction === 'Vente')
-    const remboursements = ventes.filter(v => v.type_transaction === 'Refund').reduce((s, v) => s + v.prix_ttc, 0)
 
     // CA par catégorie
     const catStats = {}
     CATEGORIES.forEach(c => { catStats[c] = { nb: 0, ca: 0, achat: 0 } })
-
     ventesOnly.forEach(v => {
       const c = v.categorie || 'Inconnu'
       if (!catStats[c]) catStats[c] = { nb: 0, ca: 0, achat: 0 }
@@ -48,17 +50,12 @@ export default function BilanPage() {
       catStats[c].ca += v.prix_ttc || 0
     })
 
-    // Imputations par catégorie (produit fini → catégorie)
-    const prodCat = {}
     if (achats) {
       achats.forEach(a => {
         a.imputations?.forEach(imp => {
           const cat = imp.categorie || 'Inconnu'
           if (!catStats[cat]) catStats[cat] = { nb: 0, ca: 0, achat: 0 }
           catStats[cat].achat += imp.cout_total_categorie || 0
-          // Also sum by produit
-          if (!prodCat[imp.produit_fini]) prodCat[imp.produit_fini] = 0
-          prodCat[imp.produit_fini] += imp.cout_total_categorie || 0
         })
       })
     }
@@ -72,53 +69,43 @@ export default function BilanPage() {
       paiements[p].montant += v.prix_ttc || 0
     })
 
-    // Frais SumUp (1.75%)
     const cbTotal = Object.entries(paiements)
       .filter(([p]) => p !== 'Espèces')
       .reduce((s, [, d]) => s + d.montant, 0)
     const fraisSumup = -(cbTotal * 0.0175)
 
-    // Par produit
+    // Par produit — pour tableau triable
     const byProduit = {}
     ventesOnly.forEach(v => {
       const key = v.description || 'Inconnu'
-      if (!byProduit[key]) byProduit[key] = { qte: 0, ca: 0, cat: v.categorie }
+      if (!byProduit[key]) byProduit[key] = { produit: key, cat: v.categorie, qte: 0, ca: 0, cout: 0 }
       byProduit[key].qte += v.quantite || 0
       byProduit[key].ca += v.prix_ttc || 0
     })
+    if (achats) {
+      achats.forEach(a => {
+        a.imputations?.forEach(imp => {
+          if (byProduit[imp.produit_fini]) {
+            byProduit[imp.produit_fini].cout += imp.cout_total_categorie || 0
+          }
+        })
+      })
+    }
+    const produitsArr = Object.values(byProduit).map(p => ({
+      ...p,
+      marge: p.ca - p.cout,
+      margePct: p.ca > 0 ? (p.ca - p.cout) / p.ca : 0,
+    }))
+    setProduitsData(produitsArr)
 
     const totalCA = ventesOnly.reduce((s, v) => s + (v.prix_ttc || 0), 0)
     const totalAchats = (achats || []).reduce((s, a) => s + (a.total_ttc || 0), 0)
-    const fraisCommission = fraisSumup
-    const totalCharges = totalAchats + fraisCommission
-    const marge = totalCA + totalCharges // charges are negative
-
-    // Récap espèces
+    const marge = totalCA - totalAchats + fraisSumup
     const especes = paiements['Espèces']?.montant || 0
     const caisseDiff = (sem?.caisse_fin || 0) - (sem?.caisse_debut || 0)
-    const transNonEnr = caisseDiff - especes
 
-    setBilan({
-      semaine: sem,
-      catStats,
-      paiements,
-      byProduit,
-      totalCA,
-      totalAchats,
-      fraisSumup,
-      marge,
-      especes,
-      caisseDiff,
-      transNonEnr,
-      achats: achats || [],
-      remboursements,
-    })
-
+    setBilan({ semaine: sem, catStats, paiements, totalCA, totalAchats, fraisSumup, marge, especes, caisseDiff, achats: achats || [] })
     setLoading(false)
-  }
-
-  function handlePrint() {
-    window.print()
   }
 
   if (loading) return <div className="loading-page"><div className="spinner" /><span>Calcul du bilan…</span></div>
@@ -132,7 +119,7 @@ export default function BilanPage() {
         </div>
         <div className="flex-gap">
           <SemaineSelector value={semaineId} onChange={setSemaineId} />
-          {bilan && <button className="btn" onClick={handlePrint}>🖨️ Imprimer</button>}
+          {bilan && <button className="btn" onClick={() => window.print()}>🖨️ Imprimer</button>}
         </div>
       </div>
 
@@ -146,16 +133,12 @@ export default function BilanPage() {
 
         {bilan && semaine && (
           <>
-            {/* Header bilan */}
+            {/* Header */}
             <div className="card mb-16" style={{ background: 'var(--green)', color: 'white' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>
-                    Semaine n°{semaine.numero} — {semaine.theme || 'Buvette'}
-                  </div>
-                  <div style={{ opacity: .8, fontSize: 13 }}>
-                    Du {semaine.date_debut} au {semaine.date_fin}
-                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>Semaine n°{semaine.numero} — {semaine.theme || 'Buvette'}</div>
+                  <div style={{ opacity: .8, fontSize: 13 }}>Du {semaine.date_debut} au {semaine.date_fin}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 28, fontWeight: 800 }}>{fmt(bilan.totalCA)}</div>
@@ -164,7 +147,7 @@ export default function BilanPage() {
               </div>
             </div>
 
-            {/* Totaux */}
+            {/* KPIs */}
             <div className="metrics-grid">
               <div className="metric-card green">
                 <div className="metric-label">CA total</div>
@@ -172,16 +155,12 @@ export default function BilanPage() {
               </div>
               <div className="metric-card red">
                 <div className="metric-label">Achats + Frais</div>
-                <div className="metric-value">{fmt(bilan.totalAchats + bilan.fraisSumup)}</div>
+                <div className="metric-value">{fmt(bilan.totalAchats + Math.abs(bilan.fraisSumup))}</div>
               </div>
               <div className="metric-card" style={{ borderLeft: '3px solid var(--green)' }}>
                 <div className="metric-label">Marge brute</div>
-                <div className="metric-value" style={{ color: bilan.marge >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                  {fmt(bilan.marge)}
-                </div>
-                <div className="metric-sub">
-                  {bilan.totalCA ? Math.round(bilan.marge / bilan.totalCA * 100) : 0}% du CA
-                </div>
+                <div className="metric-value" style={{ color: bilan.marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(bilan.marge)}</div>
+                <div className="metric-sub">{bilan.totalCA ? Math.round(bilan.marge / bilan.totalCA * 100) : 0}% du CA</div>
               </div>
               <div className="metric-card amber">
                 <div className="metric-label">Frais SumUp (1.75%)</div>
@@ -190,18 +169,12 @@ export default function BilanPage() {
             </div>
 
             <div className="grid-2">
-              {/* CA par catégorie */}
+              {/* Par catégorie */}
               <div className="card">
-                <div className="card-title">Par catégorie d'articles</div>
+                <div className="card-title">Par catégorie</div>
                 <table>
                   <thead>
-                    <tr>
-                      <th>Catégorie</th>
-                      <th className="num">Nb</th>
-                      <th className="num">CA</th>
-                      <th className="num">Achats</th>
-                      <th className="num">Marge</th>
-                    </tr>
+                    <tr><th>Catégorie</th><th className="num">Nb</th><th className="num">CA</th><th className="num">Achats</th><th className="num">Marge</th></tr>
                   </thead>
                   <tbody>
                     {Object.entries(bilan.catStats)
@@ -212,9 +185,7 @@ export default function BilanPage() {
                           <td className="num">{d.nb}</td>
                           <td className="num">{fmt(d.ca)}</td>
                           <td className="num negative">{d.achat ? fmt(-d.achat) : '—'}</td>
-                          <td className={'num ' + (d.ca - d.achat >= 0 ? 'positive' : 'negative')}>
-                            {fmt(d.ca - d.achat)}
-                          </td>
+                          <td className={'num ' + (d.ca - d.achat >= 0 ? 'positive' : 'negative')}>{fmt(d.ca - d.achat)}</td>
                         </tr>
                       ))}
                     <tr className="tr-total">
@@ -228,22 +199,20 @@ export default function BilanPage() {
                 </table>
               </div>
 
-              {/* Moyens de paiement + espèces */}
               <div>
-                <div className="card" style={{ marginBottom: 12 }}>
+                {/* Paiements */}
+                <div className="card mb-16">
                   <div className="card-title">Moyens de paiement</div>
                   <table>
                     <thead><tr><th>Mode</th><th className="num">Nb</th><th className="num">Montant</th></tr></thead>
                     <tbody>
-                      {Object.entries(bilan.paiements)
-                        .sort((a, b) => b[1].montant - a[1].montant)
-                        .map(([p, d]) => (
-                          <tr key={p}>
-                            <td>{p === 'Espèces' ? '💵' : '💳'} {p}</td>
-                            <td className="num">{d.nb}</td>
-                            <td className="num">{fmt(d.montant)}</td>
-                          </tr>
-                        ))}
+                      {Object.entries(bilan.paiements).sort((a, b) => b[1].montant - a[1].montant).map(([p, d]) => (
+                        <tr key={p}>
+                          <td>{p === 'Espèces' ? '💵' : '💳'} {p}</td>
+                          <td className="num">{d.nb}</td>
+                          <td className="num">{fmt(d.montant)}</td>
+                        </tr>
+                      ))}
                       <tr className="tr-total">
                         <td>Total</td>
                         <td className="num">{Object.values(bilan.paiements).reduce((s, d) => s + d.nb, 0)}</td>
@@ -253,6 +222,7 @@ export default function BilanPage() {
                   </table>
                 </div>
 
+                {/* Espèces */}
                 <div className="card">
                   <div className="card-title">Récap espèces</div>
                   <table>
@@ -260,14 +230,14 @@ export default function BilanPage() {
                       <tr><td>Caisse début</td><td className="num">{fmt(semaine.caisse_debut)}</td></tr>
                       <tr><td>Caisse fin</td><td className="num">{fmt(semaine.caisse_fin)}</td></tr>
                       <tr><td>Recettes espèces</td><td className="num positive">{fmt(bilan.especes)}</td></tr>
-                      <tr className="tr-total"><td>Transactions non enr.</td><td className="num">{fmt(bilan.transNonEnr)}</td></tr>
+                      <tr className="tr-total"><td>Écart caisse</td><td className="num">{fmt(bilan.caisseDiff - bilan.especes)}</td></tr>
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
 
-            {/* Détail achats */}
+            {/* Achats */}
             <div className="card mt-16">
               <div className="card-title">Détail des achats</div>
               {bilan.achats.length === 0 ? (
@@ -275,14 +245,7 @@ export default function BilanPage() {
               ) : (
                 <table>
                   <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Fournisseur</th>
-                      <th>N° Facture</th>
-                      <th>Article</th>
-                      <th className="num">TTC</th>
-                      <th>Produits imputés</th>
-                    </tr>
+                    <tr><th>Date</th><th>Fournisseur</th><th>N° Facture</th><th>Article</th><th className="num">TTC</th><th>Produits imputés</th></tr>
                   </thead>
                   <tbody>
                     {bilan.achats.map(a => (
@@ -292,12 +255,9 @@ export default function BilanPage() {
                         <td className="text-muted">{a.num_facture || '—'}</td>
                         <td>{a.article}</td>
                         <td className="num negative">{fmt(-a.total_ttc)}</td>
-                        <td>
+                        <td style={{ fontSize: 11 }}>
                           {a.imputations?.map((imp, i) => (
-                            <span key={i} style={{ fontSize: 11 }}>
-                              {imp.produit_fini} ({fmt(imp.cout_total_categorie)})
-                              {i < a.imputations.length - 1 ? ', ' : ''}
-                            </span>
+                            <span key={i}>{imp.produit_fini} ({fmt(imp.cout_total_categorie)}){i < a.imputations.length - 1 ? ', ' : ''}</span>
                           ))}
                         </td>
                       </tr>
@@ -312,46 +272,45 @@ export default function BilanPage() {
               )}
             </div>
 
-            {/* Par produit */}
+            {/* Produits — TRIABLE */}
             <div className="card mt-16">
-              <div className="card-title">Détail par produit</div>
+              <div className="card-title">
+                Détail par produit
+                <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8, color: 'var(--gray-400)' }}>
+                  Cliquez sur les en-têtes pour trier
+                </span>
+              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Produit</th>
-                      <th>Catégorie</th>
-                      <th className="num">Qté</th>
-                      <th className="num">CA</th>
-                      <th className="num">Coût achat</th>
-                      <th className="num">Marge</th>
+                      <ThProd col="produit">Produit</ThProd>
+                      <ThProd col="cat">Catégorie</ThProd>
+                      <ThProd col="qte" className="num">Qté</ThProd>
+                      <ThProd col="ca" className="num">CA</ThProd>
+                      <ThProd col="cout" className="num">Coût</ThProd>
+                      <ThProd col="marge" className="num">Marge</ThProd>
+                      <ThProd col="margePct" className="num">Marge %</ThProd>
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(bilan.byProduit)
-                      .sort((a, b) => b[1].ca - a[1].ca)
-                      .map(([prod, d]) => {
-                        const cout = bilan.achats.reduce((s, a) => {
-                          const imp = a.imputations?.find(i => i.produit_fini === prod)
-                          return s + (imp?.cout_total_categorie || 0)
-                        }, 0)
-                        const marge = d.ca - cout
-                        return (
-                          <tr key={prod}>
-                            <td>{prod}</td>
-                            <td><span className="badge badge-gray">{d.cat}</span></td>
-                            <td className="num">{Math.round(d.qte)}</td>
-                            <td className="num">{fmt(d.ca)}</td>
-                            <td className="num">{cout ? fmt(-cout) : '—'}</td>
-                            <td className={'num ' + (marge >= 0 ? 'positive' : 'negative')}>{fmt(marge)}</td>
-                          </tr>
-                        )
-                      })}
+                    {sortedProduits.map(p => (
+                      <tr key={p.produit}>
+                        <td>{p.produit}</td>
+                        <td><span className="badge badge-gray">{p.cat}</span></td>
+                        <td className="num">{Math.round(p.qte)}</td>
+                        <td className="num">{fmt(p.ca)}</td>
+                        <td className="num">{p.cout ? <span className="negative">{fmt(-p.cout)}</span> : '—'}</td>
+                        <td className={'num ' + (p.marge >= 0 ? 'positive' : 'negative')}>{fmt(p.marge)}</td>
+                        <td className={'num ' + (p.margePct >= 0 ? 'positive' : 'negative')}>{Math.round(p.margePct * 100)}%</td>
+                      </tr>
+                    ))}
                     <tr className="tr-total">
                       <td colSpan={3}>Total</td>
                       <td className="num">{fmt(bilan.totalCA)}</td>
                       <td className="num negative">{fmt(-bilan.totalAchats)}</td>
                       <td className={'num ' + (bilan.marge >= 0 ? 'positive' : 'negative')}>{fmt(bilan.marge)}</td>
+                      <td className="num">{bilan.totalCA ? `${Math.round(bilan.marge / bilan.totalCA * 100)}%` : '—'}</td>
                     </tr>
                   </tbody>
                 </table>
