@@ -11,6 +11,7 @@ const NAV = [
   { to: '/dons', icon: '💝', label: 'Dons & Caritatif' },
   { to: '/historique', icon: '📅', label: 'Historique' },
   { to: '/produits', icon: '🍺', label: 'Produits' },
+  { to: '/referentiel', icon: '📚', label: 'Référentiel' },
   { to: '/semaines', icon: '⚙️', label: 'Semaines' },
 ]
 
