@@ -1,6 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import logo from '../../public/logo.png'
 
 const NAV = [
   { to: '/dashboard', icon: '📊', label: 'Tableau de bord' },
@@ -25,14 +24,14 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <img
-            src={logo}
+            src="logo.png"
             alt="HBC La Fillière"
             style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 8 }}
+            onError={e => { e.target.style.display = 'none' }}
           />
           <h1>HBC La Fillière</h1>
           <p>Gestion des buvettes</p>
         </div>
-
         <nav className="sidebar-nav">
           <div className="nav-section">
             <div className="nav-section-label">Navigation</div>
@@ -48,7 +47,6 @@ export default function Layout() {
             ))}
           </div>
         </nav>
-
         <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,.15)' }}>
           <button
             onClick={handleLogout}
@@ -62,7 +60,6 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-
       <main className="main-content">
         <Outlet />
       </main>
