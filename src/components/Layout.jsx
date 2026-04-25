@@ -8,6 +8,7 @@ const NAV = [
   { to: '/import', icon: '📂', label: 'Import SumUp' },
   { to: '/achats', icon: '🛒', label: 'Saisie achats' },
   { to: '/import-achats', icon: '📥', label: 'Import achats CSV' },
+  { to: '/dons', icon: '💝', label: 'Dons & Caritatif' },
   { to: '/historique', icon: '📅', label: 'Historique' },
   { to: '/produits', icon: '🍺', label: 'Produits' },
   { to: '/semaines', icon: '⚙️', label: 'Semaines' },
