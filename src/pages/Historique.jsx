@@ -287,7 +287,7 @@ export default function HistoriquePage() {
                         <td className="num">{fmt(s.ca_cb)}</td>
                         <td>
                           <div className="flex-gap">
-                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/bilan?s=${s.semaine_id}`)}>
+                            <button className="btn btn-sm btn-primary" onClick={() => navigate("/bilan", { state: { semaineId: s.semaine_id } })}>
                               📋 Bilan
                             </button>
                             <button className="btn btn-sm" onClick={() => setEditModal(s)}>✏️</button>
