@@ -7,7 +7,7 @@ const NAV = [
   { to: '/bilan', icon: '📋', label: 'Bilan semaine' },
   { to: '/import', icon: '📂', label: 'Import SumUp' },
   { to: '/achats', icon: '🛒', label: 'Saisie achats' },
-  { to: '/ticket', icon: '📷', label: 'Scan ticket' },
+  { to: '/import-achats', icon: '📥', label: 'Import achats CSV' },
   { to: '/historique', icon: '📅', label: 'Historique' },
   { to: '/produits', icon: '🍺', label: 'Produits' },
   { to: '/semaines', icon: '⚙️', label: 'Semaines' },
