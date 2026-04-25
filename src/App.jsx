@@ -10,6 +10,7 @@ import BilanPage from './pages/Bilan.jsx'
 import HistoriquePage from './pages/Historique.jsx'
 import ProduitsPage from './pages/Produits.jsx'
 import SemainesPage from './pages/Semaines.jsx'
+import DonsPage from './pages/Dons.jsx'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="import" element={<ImportPage />} />
           <Route path="achats" element={<AchatsPage />} />
           <Route path="import-achats" element={<ImportAchatsPage />} />
+          <Route path="dons" element={<DonsPage />} />
           <Route path="bilan" element={<BilanPage />} />
           <Route path="historique" element={<HistoriquePage />} />
           <Route path="produits" element={<ProduitsPage />} />
