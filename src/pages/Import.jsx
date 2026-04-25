@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { parseSumUpFile, detectSemaine, fmt } from '../lib/sumup'
-import { useSortable } from '../hooks/useSortable'
+import { useSortable } from '../hooks/useSortable.jsx'
 
 // ─── Modal Mapping ────────────────────────────────────────────────────────────
 function MappingModal({ nomSumup, produits, onSave, onClose }) {
