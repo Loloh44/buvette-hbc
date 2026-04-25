@@ -9,6 +9,7 @@ import BilanPage from './pages/Bilan.jsx'
 import HistoriquePage from './pages/Historique.jsx'
 import ProduitsPage from './pages/Produits.jsx'
 import SemainesPage from './pages/Semaines.jsx'
+import TicketPage from './pages/Ticket.jsx'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="achats" element={<AchatsPage />} />
+          <Route path="ticket" element={<TicketPage />} />
           <Route path="bilan" element={<BilanPage />} />
           <Route path="historique" element={<HistoriquePage />} />
           <Route path="produits" element={<ProduitsPage />} />
