@@ -8,6 +8,281 @@ const EMPTY_ACHAT = {
   article: '', quantite: '', unite: '', total_ht: '', taux_tva: 0.055, total_ttc: ''
 }
 
+// ─── Modal Répartition Automatique ────────────────────────────────────────────
+function RepartitionModal({ achat, semaineId, produits, onSave, onClose }) {
+  const [selectedProduits, setSelectedProduits] = useState([])
+  const [ventesParProduit, setVentesParProduit] = useState({})
+  const [repartition, setRepartition] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [mode, setMode] = useState('auto') // auto | manuel
+
+  useEffect(() => {
+    // Pré-remplir avec les imputations existantes
+    if (achat.imputations?.length > 0) {
+      const existing = achat.imputations.map(imp => imp.produit_fini)
+      setSelectedProduits(existing)
+    }
+  }, [achat])
+
+  async function loadVentes() {
+    if (!selectedProduits.length || !semaineId) return
+    setLoading(true)
+
+    // Récupérer les quantités vendues pour chaque produit sélectionné
+    const { data } = await supabase
+      .from('ventes')
+      .select('description, quantite')
+      .eq('semaine_id', semaineId)
+      .eq('type_transaction', 'Vente')
+      .in('description', selectedProduits)
+
+    const qteMap = {}
+    data?.forEach(v => {
+      qteMap[v.description] = (qteMap[v.description] || 0) + (v.quantite || 0)
+    })
+
+    setVentesParProduit(qteMap)
+
+    // Calculer la répartition proportionnelle
+    const totalQte = Object.values(qteMap).reduce((s, q) => s + q, 0)
+    const totalTTC = parseFloat(achat.total_ttc) || 0
+
+    const rep = selectedProduits.map(prod => {
+      const qte = qteMap[prod] || 0
+      const pct = totalQte > 0 ? qte / totalQte : 1 / selectedProduits.length
+      const montant = Math.round(totalTTC * pct * 100) / 100
+      const cat = produits.find(p => p.nom === prod)?.categorie || null
+      return { produit_fini: prod, quantite: qte, pct, montant, categorie: cat }
+    })
+
+    // Ajuster arrondi sur le dernier
+    const sumMontants = rep.reduce((s, r) => s + r.montant, 0)
+    if (rep.length > 0) {
+      rep[rep.length - 1].montant = Math.round((rep[rep.length - 1].montant + totalTTC - sumMontants) * 100) / 100
+    }
+
+    setRepartition(rep)
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (mode === 'auto' && selectedProduits.length > 0) loadVentes()
+    if (mode === 'manuel' && selectedProduits.length > 0) {
+      // Répartition égale par défaut en mode manuel
+      const totalTTC = parseFloat(achat.total_ttc) || 0
+      const rep = selectedProduits.map(prod => ({
+        produit_fini: prod,
+        quantite: 0,
+        pct: 1 / selectedProduits.length,
+        montant: Math.round(totalTTC / selectedProduits.length * 100) / 100,
+        categorie: produits.find(p => p.nom === prod)?.categorie || null,
+      }))
+      setRepartition(rep)
+    }
+  }, [selectedProduits, mode])
+
+  function updateMontant(idx, val) {
+    setRepartition(r => r.map((item, i) => i === idx ? { ...item, montant: parseFloat(val) || 0 } : item))
+  }
+
+  async function handleSave() {
+    if (!repartition.length) return
+    setSaving(true)
+
+    // Supprimer les anciennes imputations
+    if (achat.imputations?.length > 0) {
+      await supabase.from('imputations').delete().eq('achat_id', achat.id)
+    }
+
+    // Insérer les nouvelles
+    await supabase.from('imputations').insert(
+      repartition.map(r => ({
+        achat_id: achat.id,
+        produit_fini: r.produit_fini,
+        categorie: r.categorie,
+        quantite_categorie: r.quantite || null,
+        cout_total_categorie: r.montant,
+      }))
+    )
+
+    setSaving(false)
+    onSave()
+  }
+
+  const totalTTC = parseFloat(achat.total_ttc) || 0
+  const totalRep = repartition.reduce((s, r) => s + r.montant, 0)
+  const ecart = Math.round((totalTTC - totalRep) * 100) / 100
+
+  const cats = ['Boissons', 'Snacking', 'Boutique', 'Dons', 'Inconnu']
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: 'white', borderRadius: 12, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Header */}
+        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--gray-200)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>⚖️ Répartition des coûts</div>
+              <div style={{ fontSize: 13, color: 'var(--gray-400)', marginTop: 2 }}>
+                {achat.article} — <strong>{fmt(totalTTC)}</strong> · {achat.fournisseur}
+              </div>
+            </div>
+            <button className="btn btn-sm" onClick={onClose}>✕</button>
+          </div>
+
+          {/* Mode */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className={'btn btn-sm' + (mode === 'auto' ? ' btn-primary' : '')} onClick={() => setMode('auto')}>
+              🤖 Auto (proportionnel aux ventes)
+            </button>
+            <button className={'btn btn-sm' + (mode === 'manuel' ? ' btn-primary' : '')} onClick={() => setMode('manuel')}>
+              ✏️ Manuel (saisir les montants)
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+
+          {/* Sélection des produits */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title">1. Sélectionner les produits finis concernés</div>
+            <p className="text-muted text-sm" style={{ marginBottom: 12 }}>
+              {mode === 'auto'
+                ? "L'appli ira chercher les quantités vendues de chaque produit cette semaine pour calculer la répartition."
+                : "Saisissez ensuite manuellement le montant à imputer à chaque produit."}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {cats.map(cat => (
+                <div key={cat}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4, marginTop: 8 }}>{cat}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {produits.filter(p => p.categorie === cat).map(p => {
+                      const selected = selectedProduits.includes(p.nom)
+                      return (
+                        <button
+                          key={p.nom}
+                          className={'btn btn-sm' + (selected ? ' btn-primary' : '')}
+                          style={{ fontSize: 11, padding: '3px 8px' }}
+                          onClick={() => setSelectedProduits(sel =>
+                            sel.includes(p.nom) ? sel.filter(s => s !== p.nom) : [...sel, p.nom]
+                          )}
+                        >
+                          {selected ? '✓ ' : ''}{p.nom}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Résultat répartition */}
+          {selectedProduits.length > 0 && (
+            <div className="card">
+              <div className="card-title">2. Répartition calculée</div>
+
+              {loading && <div style={{ textAlign: 'center', padding: 20 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>}
+
+              {!loading && repartition.length > 0 && (
+                <>
+                  {mode === 'auto' && (
+                    <div className="alert alert-info" style={{ marginBottom: 12 }}>
+                      ℹ️ Basé sur les quantités vendues cette semaine. Passez en mode Manuel pour ajuster.
+                    </div>
+                  )}
+
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Produit fini</th>
+                        <th>Catégorie</th>
+                        {mode === 'auto' && <th className="num">Qté vendue</th>}
+                        <th className="num">% répartition</th>
+                        <th className="num">Montant (€)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {repartition.map((r, i) => (
+                        <tr key={r.produit_fini}>
+                          <td style={{ fontWeight: 500 }}>{r.produit_fini}</td>
+                          <td><span className="badge badge-gray">{r.categorie || '—'}</span></td>
+                          {mode === 'auto' && (
+                            <td className="num">
+                              {r.quantite > 0
+                                ? <strong>{Math.round(r.quantite)}</strong>
+                                : <span className="text-muted" style={{ fontSize: 11 }}>0 vendu ⚠️</span>}
+                            </td>
+                          )}
+                          <td className="num">{Math.round(r.pct * 100)}%</td>
+                          <td className="num">
+                            {mode === 'manuel' ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={r.montant}
+                                onChange={e => updateMontant(i, e.target.value)}
+                                style={{ width: 80, padding: '3px 6px', border: '1px solid var(--gray-300)', borderRadius: 4, textAlign: 'right', fontSize: 13 }}
+                              />
+                            ) : (
+                              <strong style={{ color: 'var(--green)' }}>{fmt(r.montant)}</strong>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="tr-total">
+                        <td colSpan={mode === 'auto' ? 4 : 3}>Total imputé</td>
+                        <td className="num" style={{ color: Math.abs(ecart) > 0.01 ? 'var(--red)' : 'var(--green)' }}>
+                          {fmt(totalRep)}
+                          {Math.abs(ecart) > 0.01 && <span style={{ fontSize: 11, marginLeft: 6 }}>⚠️ écart {fmt(ecart)}</span>}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {repartition.some(r => r.quantite === 0) && mode === 'auto' && (
+                    <div className="alert alert-warning" style={{ marginTop: 12 }}>
+                      ⚠️ Certains produits n'ont pas de ventes cette semaine — leur part est à 0. Passez en mode Manuel pour ajuster.
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!loading && selectedProduits.length > 0 && repartition.length === 0 && (
+                <div className="empty-state">Calcul en cours…</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--gray-200)', display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={saving || repartition.length === 0}
+          >
+            {saving ? <span className="spinner" /> : '💾'} Enregistrer la répartition
+          </button>
+          {achat.imputations?.length > 0 && (
+            <button className="btn btn-danger" onClick={async () => {
+              await supabase.from('imputations').delete().eq('achat_id', achat.id)
+              onSave()
+            }}>
+              🗑️ Supprimer la répartition
+            </button>
+          )}
+          <button className="btn" onClick={onClose}>Annuler</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Page principale Achats ────────────────────────────────────────────────────
 export default function AchatsPage() {
   const [semaineId, setSemaineId] = useState('')
   const [achats, setAchats] = useState([])
@@ -15,20 +290,15 @@ export default function AchatsPage() {
   const [loading, setLoading] = useState(false)
   const [alert, setAlert] = useState(null)
   const [form, setForm] = useState(EMPTY_ACHAT)
-  const [imputations, setImputations] = useState([{ produit_fini: '', quantite_categorie: '', cout_total_categorie: '' }])
   const [editId, setEditId] = useState(null)
   const [showForm, setShowForm] = useState(false)
+  const [repartitionModal, setRepartitionModal] = useState(null)
 
-  useEffect(() => {
-    loadProduits()
-  }, [])
-
-  useEffect(() => {
-    if (semaineId) loadAchats()
-  }, [semaineId])
+  useEffect(() => { loadProduits() }, [])
+  useEffect(() => { if (semaineId) loadAchats() }, [semaineId])
 
   async function loadProduits() {
-    const { data } = await supabase.from('produits').select('nom, categorie').eq('actif', true).order('nom')
+    const { data } = await supabase.from('produits').select('nom, categorie').eq('actif', true).order('categorie').order('nom')
     setProduits(data || [])
   }
 
@@ -46,18 +316,15 @@ export default function AchatsPage() {
   function calcTTC() {
     const ht = parseFloat(form.total_ht)
     const tva = parseFloat(form.taux_tva)
-    if (!isNaN(ht) && !isNaN(tva)) {
-      setForm(f => ({ ...f, total_ttc: (ht * (1 + tva)).toFixed(4) }))
-    }
+    if (!isNaN(ht) && !isNaN(tva)) setForm(f => ({ ...f, total_ttc: (ht * (1 + tva)).toFixed(2) }))
   }
 
   async function handleSave() {
     if (!semaineId) return setAlert({ type: 'error', msg: 'Choisissez une semaine' })
     if (!form.article || !form.total_ttc) return setAlert({ type: 'error', msg: 'Article et montant TTC requis' })
-    setLoading(true)
-    setAlert(null)
+    setLoading(true); setAlert(null)
     try {
-      const achatData = {
+      const payload = {
         semaine_id: semaineId,
         fournisseur: form.fournisseur,
         num_facture: form.num_facture || null,
@@ -69,41 +336,12 @@ export default function AchatsPage() {
         taux_tva: parseFloat(form.taux_tva),
         total_ttc: parseFloat(form.total_ttc),
       }
-
-      let achatId = editId
-      if (editId) {
-        await supabase.from('achats').update(achatData).eq('id', editId)
-        await supabase.from('imputations').delete().eq('achat_id', editId)
-      } else {
-        const { data } = await supabase.from('achats').insert(achatData).select().single()
-        achatId = data.id
-      }
-
-      // Insert imputations
-      const validImputations = imputations.filter(i => i.produit_fini && i.cout_total_categorie)
-      if (validImputations.length > 0) {
-        await supabase.from('imputations').insert(
-          validImputations.map(i => ({
-            achat_id: achatId,
-            produit_fini: i.produit_fini,
-            categorie: produits.find(p => p.nom === i.produit_fini)?.categorie || null,
-            quantite_totale: i.quantite_totale ? parseFloat(i.quantite_totale) : null,
-            quantite_categorie: i.quantite_categorie ? parseFloat(i.quantite_categorie) : null,
-            cout_unitaire: i.cout_unitaire ? parseFloat(i.cout_unitaire) : null,
-            cout_total_categorie: parseFloat(i.cout_total_categorie),
-          }))
-        )
-      }
-
+      if (editId) await supabase.from('achats').update(payload).eq('id', editId)
+      else await supabase.from('achats').insert(payload)
       setAlert({ type: 'success', msg: editId ? 'Achat mis à jour' : 'Achat ajouté' })
-      setForm(EMPTY_ACHAT)
-      setImputations([{ produit_fini: '', quantite_categorie: '', cout_total_categorie: '' }])
-      setEditId(null)
-      setShowForm(false)
+      setForm(EMPTY_ACHAT); setEditId(null); setShowForm(false)
       loadAchats()
-    } catch (e) {
-      setAlert({ type: 'error', msg: e.message })
-    }
+    } catch (e) { setAlert({ type: 'error', msg: e.message }) }
     setLoading(false)
   }
 
@@ -115,19 +353,28 @@ export default function AchatsPage() {
 
   function startEdit(a) {
     setForm({ ...a, date_achat: a.date_achat || '' })
-    setImputations(a.imputations?.length ? a.imputations : [{ produit_fini: '', quantite_categorie: '', cout_total_categorie: '' }])
-    setEditId(a.id)
-    setShowForm(true)
+    setEditId(a.id); setShowForm(true)
   }
 
   const totalAchats = achats.reduce((s, a) => s + (a.total_ttc || 0), 0)
+  const nonImputés = achats.filter(a => !a.imputations?.length).length
 
   return (
     <div>
+      {repartitionModal && (
+        <RepartitionModal
+          achat={repartitionModal}
+          semaineId={semaineId}
+          produits={produits}
+          onSave={() => { setRepartitionModal(null); loadAchats() }}
+          onClose={() => setRepartitionModal(null)}
+        />
+      )}
+
       <div className="page-header">
         <div>
           <p className="page-title">Saisie des achats</p>
-          <p className="page-subtitle">Tickets de caisse et répartition par produit fini</p>
+          <p className="page-subtitle">Tickets de caisse et répartition automatique par produit</p>
         </div>
         <div className="flex-gap">
           <SemaineSelector value={semaineId} onChange={setSemaineId} />
@@ -140,14 +387,20 @@ export default function AchatsPage() {
       <div className="page-body">
         {alert && <div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
 
+        {/* Alerte achats non imputés */}
+        {nonImputés > 0 && semaineId && (
+          <div className="alert alert-warning">
+            ⚠️ <strong>{nonImputés} achat(s)</strong> sans répartition — cliquez sur <strong>⚖️ Répartir</strong> pour imputer les coûts aux produits vendus.
+          </div>
+        )}
+
         {showForm && (
           <div className="card mb-16">
             <div className="card-title">{editId ? 'Modifier' : 'Nouvel'} achat</div>
-
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Fournisseur *</label>
-                <input className="form-input" value={form.fournisseur} onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))} placeholder="PromoCash, Point G..." />
+                <label className="form-label">Fournisseur</label>
+                <input className="form-input" value={form.fournisseur} onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))} placeholder="PromoCash, Carrefour..." />
               </div>
               <div className="form-group">
                 <label className="form-label">N° facture</label>
@@ -187,37 +440,6 @@ export default function AchatsPage() {
                 <input className="form-input" type="number" step="0.01" value={form.total_ttc} onChange={e => setForm(f => ({ ...f, total_ttc: e.target.value }))} style={{ maxWidth: 200 }} />
               </div>
             </div>
-
-            <hr className="divider" />
-            <div className="card-title">Imputation par produit fini</div>
-            <p className="text-muted text-sm mb-16">Répartissez le coût de cet article sur les produits finis (comme dans votre Excel).</p>
-
-            {imputations.map((imp, idx) => (
-              <div key={idx} className="form-grid" style={{ marginBottom: 10, padding: '10px', background: 'var(--gray-50)', borderRadius: 6 }}>
-                <div className="form-group">
-                  <label className="form-label">Produit fini</label>
-                  <select className="form-select" value={imp.produit_fini} onChange={e => setImputations(arr => arr.map((a, i) => i === idx ? { ...a, produit_fini: e.target.value } : a))}>
-                    <option value="">— Choisir —</option>
-                    {produits.map(p => <option key={p.nom} value={p.nom}>{p.nom}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Qté allouée</label>
-                  <input className="form-input" type="number" value={imp.quantite_categorie} onChange={e => setImputations(arr => arr.map((a, i) => i === idx ? { ...a, quantite_categorie: e.target.value } : a))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Coût total (€) *</label>
-                  <input className="form-input" type="number" step="0.01" value={imp.cout_total_categorie} onChange={e => setImputations(arr => arr.map((a, i) => i === idx ? { ...a, cout_total_categorie: e.target.value } : a))} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                  <button className="btn btn-danger btn-sm" onClick={() => setImputations(arr => arr.filter((_, i) => i !== idx))} disabled={imputations.length === 1}>✕</button>
-                </div>
-              </div>
-            ))}
-            <button className="btn btn-sm mt-8" onClick={() => setImputations(arr => [...arr, { produit_fini: '', quantite_categorie: '', cout_total_categorie: '' }])}>
-              + Ajouter une imputation
-            </button>
-
             <div className="flex-gap mt-16">
               <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
                 {loading ? <span className="spinner" /> : '💾'} {editId ? 'Mettre à jour' : 'Enregistrer'}
@@ -227,15 +449,20 @@ export default function AchatsPage() {
           </div>
         )}
 
-        {/* Liste des achats */}
+        {/* Liste achats */}
         <div className="card">
           <div className="flex-between mb-16">
             <div className="card-title" style={{ marginBottom: 0 }}>Achats enregistrés</div>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>Total : {fmt(totalAchats)}</span>
+            <div className="flex-gap">
+              {nonImputés > 0 && (
+                <span className="badge badge-amber">{nonImputés} sans répartition</span>
+              )}
+              <span style={{ fontWeight: 700, fontSize: 15 }}>Total : {fmt(totalAchats)}</span>
+            </div>
           </div>
 
           {!semaineId ? (
-            <div className="empty-state">Sélectionnez une semaine pour voir les achats</div>
+            <div className="empty-state">Sélectionnez une semaine</div>
           ) : achats.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">🛒</div>
@@ -251,31 +478,40 @@ export default function AchatsPage() {
                     <th>Article</th>
                     <th>Qté</th>
                     <th className="num">TTC</th>
-                    <th>Imputations</th>
+                    <th>Répartition</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {achats.map(a => (
-                    <tr key={a.id}>
+                    <tr key={a.id} style={{ background: !a.imputations?.length ? 'var(--amber-light)' : '' }}>
                       <td>{a.date_achat}</td>
                       <td>{a.fournisseur}</td>
-                      <td>{a.article}</td>
+                      <td style={{ fontWeight: 500 }}>{a.article}</td>
                       <td>{a.quantite} {a.unite}</td>
                       <td className="num" style={{ fontWeight: 600 }}>{fmt(a.total_ttc)}</td>
                       <td>
                         {a.imputations?.length > 0 ? (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                             {a.imputations.map((imp, i) => (
-                              <span key={i} className="badge badge-blue" title={fmt(imp.cout_total_categorie)}>
-                                {imp.produit_fini?.split(' ')[0]}
+                              <span key={i} className="badge badge-green" style={{ fontSize: 10 }} title={fmt(imp.cout_total_categorie)}>
+                                {imp.produit_fini?.split(' ').slice(0, 2).join(' ')} · {fmt(imp.cout_total_categorie)}
                               </span>
                             ))}
                           </div>
-                        ) : <span className="text-muted text-sm">—</span>}
+                        ) : (
+                          <span className="badge badge-amber">⚠️ Non réparti</span>
+                        )}
                       </td>
                       <td>
                         <div className="flex-gap">
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => setRepartitionModal(a)}
+                            title="Répartir entre produits"
+                          >
+                            ⚖️ Répartir
+                          </button>
                           <button className="btn btn-sm" onClick={() => startEdit(a)}>✏️</button>
                           <button className="btn btn-danger btn-sm" onClick={() => handleDelete(a.id)}>🗑️</button>
                         </div>
@@ -285,7 +521,11 @@ export default function AchatsPage() {
                   <tr className="tr-total">
                     <td colSpan={4}>Total</td>
                     <td className="num">{fmt(totalAchats)}</td>
-                    <td colSpan={2}></td>
+                    <td colSpan={2}>
+                      {nonImputés === 0
+                        ? <span className="badge badge-green">✅ Tout réparti</span>
+                        : <span className="badge badge-amber">{nonImputés} à répartir</span>}
+                    </td>
                   </tr>
                 </tbody>
               </table>
