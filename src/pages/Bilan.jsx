@@ -170,15 +170,34 @@ export default function BilanPage() {
   }
 
   async function confirmerFraisSumup(modal) {
-    await supabase.from('achats').insert({
-      semaine_id: semaineId,
-      fournisseur: 'SumUp',
-      date_achat: semaine.date_fin,
-      article: modal.libelle,
-      total_ht: modal.montant,
-      taux_tva: 0,
-      total_ttc: modal.montant,
-    })
+    // Chercher si une ligne frais SumUp existe déjà pour cette semaine
+    const { data: existing } = await supabase
+      .from('achats')
+      .select('id')
+      .eq('semaine_id', semaineId)
+      .eq('fournisseur', 'SumUp')
+      .single()
+
+    if (existing?.id) {
+      // Mettre à jour la ligne existante
+      await supabase.from('achats').update({
+        article: modal.libelle,
+        total_ht: modal.montant,
+        total_ttc: modal.montant,
+        date_achat: semaine.date_fin,
+      }).eq('id', existing.id)
+    } else {
+      // Créer une nouvelle ligne
+      await supabase.from('achats').insert({
+        semaine_id: semaineId,
+        fournisseur: 'SumUp',
+        date_achat: semaine.date_fin,
+        article: modal.libelle,
+        total_ht: modal.montant,
+        taux_tva: 0,
+        total_ttc: modal.montant,
+      })
+    }
     setGenFraisModal(null)
     loadBilan()
   }
@@ -197,8 +216,16 @@ export default function BilanPage() {
 
   async function confirmerEcartCaisse(modal) {
     if (modal.ecart === 0) { setGenEcartModal(null); return }
-    await supabase.from('ventes').insert({
-      semaine_id: semaineId,
+
+    // Chercher si une ligne écart de caisse existe déjà
+    const { data: existing } = await supabase
+      .from('ventes')
+      .select('id')
+      .eq('semaine_id', semaineId)
+      .eq('description', modal.libelle)
+      .single()
+
+    const payload = {
       date_vente: new Date(semaine.date_fin + 'T23:59:00').toISOString(),
       description: modal.libelle,
       categorie: 'Inconnu',
@@ -211,7 +238,13 @@ export default function BilanPage() {
       mois: new Date(semaine.date_fin).getMonth() + 1,
       semaine_numero: null,
       ref_transaction: null,
-    })
+    }
+
+    if (existing?.id) {
+      await supabase.from('ventes').update(payload).eq('id', existing.id)
+    } else {
+      await supabase.from('ventes').insert({ semaine_id: semaineId, ...payload })
+    }
     setGenEcartModal(null)
     loadBilan()
   }
