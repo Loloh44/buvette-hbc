@@ -383,7 +383,10 @@ export default function ImportPage() {
         // Insert in batches
         const batch = 200
         for (let i = 0; i < toInsert.length; i += batch) {
-          const chunk = toInsert.slice(i, i + batch).map(v => ({ ...v, semaine_id: semaineId }))
+          const chunk = toInsert.slice(i, i + batch).map(v => {
+            const { _dedup_key, ...vente } = v
+            return { ...vente, semaine_id: semaineId }
+          })
           const { error } = await supabase.from('ventes').insert(chunk)
           if (error) throw error
         }
