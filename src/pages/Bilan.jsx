@@ -121,12 +121,10 @@ export default function BilanPage() {
       paiements[p].montant += v.prix_ttc || 0
     })
 
-    const cbTotal = Object.entries(paiements).filter(([p]) => p !== 'Espèces').reduce((s, [, d]) => s + d.montant, 0)
-    const fraisSumup = -(cbTotal * 0.0175)
     const totalCA = ventesOnly.reduce((s, v) => s + (v.prix_ttc || 0), 0)
     const totalAchats = (achats || []).reduce((s, a) => s + (a.total_ttc || 0), 0)
     const totalDons = (dons || []).reduce((s, d) => s + (d.montant_calcule || 0), 0)
-    const marge = totalCA - totalAchats - totalDons + fraisSumup
+    const marge = totalCA - totalAchats - totalDons
     const especes = paiements['Espèces']?.montant || 0
 
     const byProduit = {}
@@ -147,7 +145,7 @@ export default function BilanPage() {
     setProduitsData(produitsArr)
 
     setBilan({
-      catStats, paiements, totalCA, totalAchats, totalDons, fraisSumup, marge,
+      catStats, paiements, totalCA, totalAchats, totalDons, marge,
       especes, achats: achats || [], dons: dons || [],
       caisseDiff: (sem?.caisse_fin || 0) - (sem?.caisse_debut || 0)
     })
@@ -384,15 +382,15 @@ export default function BilanPage() {
             <div className="metrics-grid">
               <div className="metric-card green"><div className="metric-label">CA total</div><div className="metric-value">{fmt(bilan.totalCA)}</div></div>
               <div className="metric-card red">
-                <div className="metric-label">Achats + Frais + Dons</div>
-                <div className="metric-value">{fmt(bilan.totalAchats + Math.abs(bilan.fraisSumup) + bilan.totalDons)}</div>
+                <div className="metric-label">Achats + Dons</div>
+                <div className="metric-value">{fmt(bilan.totalAchats + bilan.totalDons)}</div>
               </div>
               <div className="metric-card" style={{ borderLeft:'3px solid var(--green)' }}>
                 <div className="metric-label">Marge nette</div>
                 <div className="metric-value" style={{ color: bilan.marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(bilan.marge)}</div>
                 <div className="metric-sub">{bilan.totalCA ? Math.round(bilan.marge / bilan.totalCA * 100) : 0}% du CA</div>
               </div>
-              <div className="metric-card amber"><div className="metric-label">Frais SumUp (1.75%)</div><div className="metric-value">{fmt(bilan.fraisSumup)}</div></div>
+
               {bilan.totalDons > 0 && (
                 <div className="metric-card" style={{ borderLeft:'3px solid var(--green)' }}>
                   <div className="metric-label">Dons reversés</div>
