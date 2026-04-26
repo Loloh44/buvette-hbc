@@ -149,15 +149,65 @@ function RepartitionModal({ achat, semaineId, produits, onSave, onClose }) {
           {/* Sélection des produits */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-title">1. Sélectionner les produits finis concernés</div>
-            <p className="text-muted text-sm" style={{ marginBottom: 12 }}>
+            <p className="text-muted text-sm" style={{ marginBottom: 10 }}>
               {mode === 'auto'
-                ? "L'appli ira chercher les quantités vendues de chaque produit cette semaine pour calculer la répartition."
+                ? "L'appli calcule la répartition proportionnellement aux quantités vendues cette semaine."
                 : "Saisissez ensuite manuellement le montant à imputer à chaque produit."}
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+
+            {/* ── Boutons de sélection rapide ── */}
+            <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, border: '1px solid var(--gray-200)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 8 }}>
+                Sélection rapide
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {/* Tout sélectionner */}
+                <button
+                  className="btn btn-sm btn-primary"
+                  style={{ fontSize: 11 }}
+                  onClick={() => setSelectedProduits(produits.map(p => p.nom))}
+                >
+                  ✅ Tous les produits ({produits.length})
+                </button>
+                {/* Tout désélectionner */}
+                <button
+                  className="btn btn-sm"
+                  style={{ fontSize: 11 }}
+                  onClick={() => setSelectedProduits([])}
+                >
+                  ✕ Désélectionner tout
+                </button>
+                {/* Par catégorie */}
+                {cats.map(cat => {
+                  const prodsInCat = produits.filter(p => p.categorie === cat)
+                  if (!prodsInCat.length) return null
+                  const allSelected = prodsInCat.every(p => selectedProduits.includes(p.nom))
+                  return (
+                    <button
+                      key={cat}
+                      className={'btn btn-sm' + (allSelected ? ' btn-primary' : '')}
+                      style={{ fontSize: 11 }}
+                      onClick={() => {
+                        const nomscat = prodsInCat.map(p => p.nom)
+                        if (allSelected) {
+                          setSelectedProduits(sel => sel.filter(s => !nomscat.includes(s)))
+                        } else {
+                          setSelectedProduits(sel => [...new Set([...sel, ...nomscat])])
+                        }
+                      }}
+                    >
+                      {allSelected ? '✓ ' : ''}{cat} ({prodsInCat.length})
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* ── Sélection individuelle ── */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {cats.map(cat => (
-                <div key={cat}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4, marginTop: 8 }}>{cat}</div>
+                <div key={cat} style={{ width: '100%' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4, marginTop: 6 }}>{cat}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {produits.filter(p => p.categorie === cat).map(p => {
                       const selected = selectedProduits.includes(p.nom)
@@ -178,6 +228,12 @@ function RepartitionModal({ achat, semaineId, produits, onSave, onClose }) {
                 </div>
               ))}
             </div>
+
+            {selectedProduits.length > 0 && (
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--green)', fontWeight: 500 }}>
+                ✅ {selectedProduits.length} produit(s) sélectionné(s)
+              </div>
+            )}
           </div>
 
           {/* Résultat répartition */}
