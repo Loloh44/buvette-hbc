@@ -156,13 +156,28 @@ export default function BilanPage() {
   // ── Génération frais SumUp ─────────────────────────────────────────────────
   async function genererFraisSumup() {
     if (!bilan || !semaine) return
-    const { data: params } = await supabase.from('parametres').select('*').eq('cle', 'taux_sumup').single()
+    const [
+      { data: params },
+      { data: paramLib },
+      { data: payModes }
+    ] = await Promise.all([
+      supabase.from('parametres').select('*').eq('cle', 'taux_sumup').single(),
+      supabase.from('parametres').select('*').eq('cle', 'frais_sumup_libelle').single(),
+      supabase.from('moyens_paiement').select('nom, est_carte').eq('actif', true),
+    ])
     const taux = parseFloat(params?.valeur || '1.75') / 100
-    const { data: paramLib } = await supabase.from('parametres').select('*').eq('cle', 'frais_sumup_libelle').single()
     const libelle = paramLib?.valeur || 'Frais SumUp'
+
+    // Construire un Set des moyens de paiement soumis aux frais (est_carte = true)
+    const carteModes = new Set(
+      (payModes || []).filter(p => p.est_carte).map(p => p.nom)
+    )
+
+    // Si la table est vide, fallback sur "pas espèces/virement/chèque"
     const cbTotal = Object.entries(bilan.paiements)
-      .filter(([p]) => p !== 'Espèces')
+      .filter(([p]) => carteModes.size > 0 ? carteModes.has(p) : !['Espèces','Virement','Chèque'].includes(p))
       .reduce((s, [, d]) => s + d.montant, 0)
+
     const montant = Math.round(cbTotal * taux * 100) / 100
     setGenFraisModal({ libelle, taux: (taux * 100).toFixed(2), cbTotal, montant })
   }
@@ -475,7 +490,13 @@ export default function BilanPage() {
                     <thead><tr><th>Mode</th><th className="num">Nb</th><th className="num">Montant</th></tr></thead>
                     <tbody>
                       {Object.entries(bilan.paiements).sort((a,b)=>b[1].montant-a[1].montant).map(([p,d])=>(
-                        <tr key={p}><td>{p==='Espèces'?'💵':'💳'} {p}</td><td className="num">{d.nb}</td><td className="num">{fmt(d.montant)}</td></tr>
+                        <tr key={p}>
+                          <td>
+                            {['Espèces','Virement','Chèque'].includes(p) ? '💵' : '💳'} {p}
+                          </td>
+                          <td className="num">{d.nb}</td>
+                          <td className="num">{fmt(d.montant)}</td>
+                        </tr>
                       ))}
                       <tr className="tr-total"><td>Total</td><td className="num">{Object.values(bilan.paiements).reduce((s,d)=>s+d.nb,0)}</td><td className="num">{fmt(bilan.totalCA)}</td></tr>
                     </tbody>
