@@ -66,6 +66,8 @@ export default function BilanPage() {
   const [produitsData, setProduitsData] = useState([])
   const [semaines, setSemaines] = useState([])
   const [reaffectModal, setReaffectModal] = useState(null)
+  const [genFraisModal, setGenFraisModal] = useState(null)
+  const [genEcartModal, setGenEcartModal] = useState(null)
   const { sorted: sortedProduits, Th: ThProd } = useSortable(produitsData, 'ca', 'desc')
 
   // Auto-select from navigation state (from Historique)
@@ -152,6 +154,68 @@ export default function BilanPage() {
     setLoading(false)
   }
 
+
+  // ── Génération frais SumUp ─────────────────────────────────────────────────
+  async function genererFraisSumup() {
+    if (!bilan || !semaine) return
+    const { data: params } = await supabase.from('parametres').select('*').eq('cle', 'taux_sumup').single()
+    const taux = parseFloat(params?.valeur || '1.75') / 100
+    const { data: paramLib } = await supabase.from('parametres').select('*').eq('cle', 'frais_sumup_libelle').single()
+    const libelle = paramLib?.valeur || 'Frais SumUp'
+    const cbTotal = Object.entries(bilan.paiements)
+      .filter(([p]) => p !== 'Espèces')
+      .reduce((s, [, d]) => s + d.montant, 0)
+    const montant = Math.round(cbTotal * taux * 100) / 100
+    setGenFraisModal({ libelle, taux: (taux * 100).toFixed(2), cbTotal, montant })
+  }
+
+  async function confirmerFraisSumup(modal) {
+    await supabase.from('achats').insert({
+      semaine_id: semaineId,
+      fournisseur: 'SumUp',
+      date_achat: semaine.date_fin,
+      article: modal.libelle,
+      total_ht: modal.montant,
+      taux_tva: 0,
+      total_ttc: modal.montant,
+    })
+    setGenFraisModal(null)
+    loadBilan()
+  }
+
+  // ── Génération écart de caisse ──────────────────────────────────────────────
+  async function genererEcartCaisse() {
+    if (!bilan || !semaine) return
+    const { data: paramLib } = await supabase.from('parametres').select('*').eq('cle', 'ecart_caisse_libelle').single()
+    const libelle = paramLib?.valeur || 'Écart de caisse (cash on the way)'
+    const caisseDeb = semaine.caisse_debut || 0
+    const caisseFin = semaine.caisse_fin || 0
+    const recettesEspeces = bilan.especes || 0
+    const ecart = Math.round(((caisseFin - caisseDeb) - recettesEspeces) * 100) / 100
+    setGenEcartModal({ libelle, caisseDeb, caisseFin, recettesEspeces, ecart })
+  }
+
+  async function confirmerEcartCaisse(modal) {
+    if (modal.ecart === 0) { setGenEcartModal(null); return }
+    await supabase.from('ventes').insert({
+      semaine_id: semaineId,
+      date_vente: new Date(semaine.date_fin + 'T23:59:00').toISOString(),
+      description: modal.libelle,
+      categorie: 'Inconnu',
+      quantite: 1,
+      prix_ttc: Math.abs(modal.ecart),
+      moyen_paiement: 'Espèces',
+      compte: 'HBC La Fillière',
+      type_transaction: modal.ecart > 0 ? 'Vente' : 'Refund',
+      annee: new Date(semaine.date_fin).getFullYear(),
+      mois: new Date(semaine.date_fin).getMonth() + 1,
+      semaine_numero: null,
+      ref_transaction: null,
+    })
+    setGenEcartModal(null)
+    loadBilan()
+  }
+
   const catChartData = bilan ? Object.entries(bilan.catStats)
     .filter(([, d]) => d.ca > 0)
     .map(([cat, d]) => ({ name: cat, value: Math.round(d.ca) }))
@@ -165,6 +229,81 @@ export default function BilanPage() {
 
   return (
     <div>
+      {/* Modal Frais SumUp */}
+      {genFraisModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:'white', borderRadius:12, padding:28, width:460 }}>
+            <div style={{ fontWeight:700, fontSize:16, marginBottom:8 }}>💳 Générer les frais SumUp</div>
+            <div style={{ background:'var(--gray-50)', borderRadius:8, padding:12, marginBottom:16, fontSize:13 }}>
+              <div style={{ marginBottom:6 }}>CA carte bancaire : <strong>{fmt(genFraisModal.cbTotal)}</strong></div>
+              <div style={{ marginBottom:6 }}>Taux SumUp : <strong>{genFraisModal.taux}%</strong></div>
+              <div style={{ color:'var(--red)', fontWeight:700 }}>Frais calculés : <strong>{fmt(genFraisModal.montant)}</strong></div>
+            </div>
+            <div className="form-group" style={{ marginBottom:16 }}>
+              <label className="form-label">Libellé (modifiable)</label>
+              <input className="form-input" value={genFraisModal.libelle}
+                onChange={e => setGenFraisModal(m => ({...m, libelle: e.target.value}))} />
+            </div>
+            <div className="form-group" style={{ marginBottom:16 }}>
+              <label className="form-label">Montant (€) (modifiable)</label>
+              <input className="form-input" type="number" step="0.01" value={genFraisModal.montant}
+                onChange={e => setGenFraisModal(m => ({...m, montant: parseFloat(e.target.value)||0}))} />
+            </div>
+            <div className="flex-gap">
+              <button className="btn btn-primary" onClick={() => confirmerFraisSumup(genFraisModal)}>
+                💾 Créer la ligne d'achat
+              </button>
+              <button className="btn" onClick={() => setGenFraisModal(null)}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Écart de caisse */}
+      {genEcartModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:'white', borderRadius:12, padding:28, width:460 }}>
+            <div style={{ fontWeight:700, fontSize:16, marginBottom:8 }}>💵 Générer l'écart de caisse</div>
+            <div style={{ background:'var(--gray-50)', borderRadius:8, padding:12, marginBottom:16, fontSize:13 }}>
+              <div style={{ marginBottom:4 }}>Caisse début : <strong>{fmt(genEcartModal.caisseDeb)}</strong></div>
+              <div style={{ marginBottom:4 }}>Caisse fin : <strong>{fmt(genEcartModal.caisseFin)}</strong></div>
+              <div style={{ marginBottom:4 }}>Recettes espèces enregistrées : <strong>{fmt(genEcartModal.recettesEspeces)}</strong></div>
+              <div style={{ marginTop:8, borderTop:'1px solid var(--gray-200)', paddingTop:8 }}>
+                Calcul : ({fmt(genEcartModal.caisseFin)} - {fmt(genEcartModal.caisseDeb)}) - {fmt(genEcartModal.recettesEspeces)}
+              </div>
+              <div style={{ color: genEcartModal.ecart >= 0 ? 'var(--green)' : 'var(--red)', fontWeight:700, fontSize:15, marginTop:4 }}>
+                Écart : <strong>{fmt(genEcartModal.ecart)}</strong>
+                {genEcartModal.ecart > 0 ? ' → recette (cash on the way)' : ' → déficit de caisse'}
+              </div>
+            </div>
+            {genEcartModal.ecart === 0 ? (
+              <div className="alert alert-success">✅ Pas d'écart — caisse équilibrée !</div>
+            ) : (
+              <>
+                <div className="form-group" style={{ marginBottom:12 }}>
+                  <label className="form-label">Libellé (modifiable)</label>
+                  <input className="form-input" value={genEcartModal.libelle}
+                    onChange={e => setGenEcartModal(m => ({...m, libelle: e.target.value}))} />
+                </div>
+                <div className="form-group" style={{ marginBottom:16 }}>
+                  <label className="form-label">Montant (€) (modifiable)</label>
+                  <input className="form-input" type="number" step="0.01" value={genEcartModal.ecart}
+                    onChange={e => setGenEcartModal(m => ({...m, ecart: parseFloat(e.target.value)||0}))} />
+                </div>
+              </>
+            )}
+            <div className="flex-gap">
+              {genEcartModal.ecart !== 0 && (
+                <button className="btn btn-primary" onClick={() => confirmerEcartCaisse(genEcartModal)}>
+                  💾 Créer la ligne de vente
+                </button>
+              )}
+              <button className="btn" onClick={() => setGenEcartModal(null)}>Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reaffectModal && (
         <ReaffectAchatModal
           achat={reaffectModal}
@@ -228,6 +367,16 @@ export default function BilanPage() {
                   <div className="metric-sub">{bilan.dons.length} association(s)</div>
                 </div>
               )}
+            </div>
+
+            {/* Boutons de génération */}
+            <div className="flex-gap mb-16 no-print">
+              <button className="btn" onClick={genererFraisSumup}>
+                💳 Générer frais SumUp
+              </button>
+              <button className="btn" onClick={genererEcartCaisse}>
+                💵 Générer écart de caisse
+              </button>
             </div>
 
             {/* Graphiques */}
