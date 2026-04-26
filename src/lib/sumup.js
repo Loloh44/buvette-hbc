@@ -8,7 +8,6 @@ const MONTH_MAP = {
 function parseFrenchDate(str) {
   if (!str) return null
   const s = String(str).trim()
-  // Format: "16 avr. 2026 22:16"
   const m = s.match(/(\d{1,2})\s+(\S+)\s+(\d{4})\s+(\d{2}):(\d{2})/)
   if (m) {
     const [, day, monthStr, year, hour, min] = m
@@ -17,7 +16,6 @@ function parseFrenchDate(str) {
       return new Date(+year, month, +day, +hour, +min)
     }
   }
-  // Try ISO or Excel serial
   if (!isNaN(str)) {
     const d = XLSX.SSF.parse_date_code(+str)
     if (d) return new Date(d.y, d.m - 1, d.d, d.H, d.M)
@@ -41,13 +39,16 @@ export function parseSumUpFile(buffer) {
 
   if (!rows.length) throw new Error('Fichier vide ou format non reconnu')
 
-  // Detect columns (SumUp may vary)
-  const firstRow = rows[0]
-  const keys = Object.keys(firstRow)
-  const hasCol = (name) => keys.some(k => k.toLowerCase().includes(name.toLowerCase()))
-
   const ventes = []
   let skipped = 0
+
+  // ── CORRECTION CLÉ ──────────────────────────────────────────────────────────
+  // SumUp exporte UNE LIGNE PAR ARTICLE pour une même transaction
+  // (même ref_transaction, même date, articles différents)
+  // On NE déduplication PAS ici par ref_transaction.
+  // La déduplication ne s'applique qu'à l'étape d'import en base
+  // en comparant (ref_transaction + description + prix) ensemble.
+  // ────────────────────────────────────────────────────────────────────────────
 
   for (const row of rows) {
     const dateRaw = row['Date'] || row['date'] || ''
@@ -68,7 +69,10 @@ export function parseSumUpFile(buffer) {
 
     ventes.push({
       date_vente: date.toISOString(),
+      // Clé de déduplication = ref + description + prix (pas juste ref)
+      // pour gérer les transactions multi-articles SumUp
       ref_transaction: ref || null,
+      _dedup_key: ref ? `${ref}||${description}||${prix}` : null,
       type_transaction: type,
       moyen_paiement: paiement || null,
       quantite: isNaN(quantite) ? 1 : quantite,
