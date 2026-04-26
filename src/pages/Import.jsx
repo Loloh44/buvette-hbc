@@ -233,6 +233,13 @@ export default function ImportPage() {
   const [selected, setSelected] = useState(new Set())
   const [reassignModal, setReassignModal] = useState(false)
   const [viewMode, setViewMode] = useState('import')
+  const [showAddVente, setShowAddVente] = useState(false)
+  const [addVenteForm, setAddVenteForm] = useState({
+    date_vente: new Date().toISOString().slice(0, 10),
+    description: '', categorie: 'Boissons', quantite: 1,
+    prix_ttc: '', moyen_paiement: 'Espèces', compte: 'HBC La Fillière', type_transaction: 'Vente',
+  })
+  const [addVenteSaving, setAddVenteSaving] = useState(false)
   const { sorted: sortedVentes, Th } = useSortable(ventes, 'date_vente', 'desc')
 
   useEffect(() => { loadProduits(); loadSemaines() }, [])
@@ -246,6 +253,32 @@ export default function ImportPage() {
   async function loadSemaines() {
     const { data } = await supabase.from('semaines').select('*').order('annee', { ascending: false }).order('numero', { ascending: false })
     setSemaines(data || [])
+  }
+
+  async function handleAddVente() {
+    if (!semaineFilter) return
+    if (!addVenteForm.description || !addVenteForm.prix_ttc) return
+    setAddVenteSaving(true)
+    const date = new Date(addVenteForm.date_vente)
+    await supabase.from('ventes').insert({
+      semaine_id: semaineFilter,
+      date_vente: date.toISOString(),
+      description: addVenteForm.description,
+      categorie: addVenteForm.categorie,
+      quantite: parseFloat(addVenteForm.quantite) || 1,
+      prix_ttc: parseFloat(addVenteForm.prix_ttc) || 0,
+      moyen_paiement: addVenteForm.moyen_paiement,
+      compte: addVenteForm.compte,
+      type_transaction: addVenteForm.type_transaction,
+      annee: date.getFullYear(),
+      mois: date.getMonth() + 1,
+      semaine_numero: date.getDay(),
+      ref_transaction: null,
+    })
+    setAddVenteForm(f => ({ ...f, description: '', prix_ttc: '', quantite: 1 }))
+    setAddVenteSaving(false)
+    setShowAddVente(false)
+    loadVentes()
   }
 
   async function loadVentes() {
@@ -607,14 +640,87 @@ export default function ImportPage() {
                   {semaines.map(s => <option key={s.id} value={s.id}>S{s.numero} {s.annee} — {s.theme || s.date_debut}</option>)}
                 </select>
               </div>
-              {selected.size > 0 && (
-                <div className="flex-gap">
-                  <span className="badge badge-blue">{selected.size} sélectionnée(s)</span>
-                  <button className="btn btn-sm" onClick={() => setReassignModal(true)}>↗️ Réaffecter</button>
-                  <button className="btn btn-danger btn-sm" onClick={handleDeleteSelected}>🗑️ Supprimer</button>
-                </div>
-              )}
+              <div className="flex-gap">
+                {selected.size > 0 && (
+                  <>
+                    <span className="badge badge-blue">{selected.size} sélectionnée(s)</span>
+                    <button className="btn btn-sm" onClick={() => setReassignModal(true)}>↗️ Réaffecter</button>
+                    <button className="btn btn-danger btn-sm" onClick={handleDeleteSelected}>🗑️ Supprimer</button>
+                  </>
+                )}
+                {semaineFilter && (
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowAddVente(!showAddVente)}>
+                    + Ajouter une vente manuelle
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Formulaire ajout manuel */}
+            {showAddVente && semaineFilter && (
+              <div style={{ background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>➕ Nouvelle vente manuelle</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Date</label>
+                    <input className="form-input" type="date" value={addVenteForm.date_vente}
+                      onChange={e => setAddVenteForm(f => ({ ...f, date_vente: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Produit / Description *</label>
+                    <input className="form-input" value={addVenteForm.description}
+                      onChange={e => setAddVenteForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Ex: Bière pression" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Catégorie</label>
+                    <select className="form-select" value={addVenteForm.categorie}
+                      onChange={e => setAddVenteForm(f => ({ ...f, categorie: e.target.value }))}>
+                      {['Boissons','Snacking','Boutique','Dons','Inconnu'].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Quantité</label>
+                    <input className="form-input" type="number" min="1" value={addVenteForm.quantite}
+                      onChange={e => setAddVenteForm(f => ({ ...f, quantite: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Prix TTC (€) *</label>
+                    <input className="form-input" type="number" step="0.01" value={addVenteForm.prix_ttc}
+                      onChange={e => setAddVenteForm(f => ({ ...f, prix_ttc: e.target.value }))}
+                      placeholder="0.00" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Paiement</label>
+                    <select className="form-select" value={addVenteForm.moyen_paiement}
+                      onChange={e => setAddVenteForm(f => ({ ...f, moyen_paiement: e.target.value }))}>
+                      {['Espèces','Visa - Débit','Mastercard - Débit','Virement'].map(p => <option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Compte</label>
+                    <select className="form-select" value={addVenteForm.compte}
+                      onChange={e => setAddVenteForm(f => ({ ...f, compte: e.target.value }))}>
+                      {['HBC La Fillière','Nougarede','Autre'].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Type</label>
+                    <select className="form-select" value={addVenteForm.type_transaction}
+                      onChange={e => setAddVenteForm(f => ({ ...f, type_transaction: e.target.value }))}>
+                      <option value="Vente">Vente</option>
+                      <option value="Refund">Remboursement</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex-gap">
+                  <button className="btn btn-primary btn-sm" onClick={handleAddVente} disabled={addVenteSaving || !addVenteForm.description || !addVenteForm.prix_ttc}>
+                    {addVenteSaving ? <span className="spinner" /> : '💾'} Enregistrer la vente
+                  </button>
+                  <button className="btn btn-sm" onClick={() => setShowAddVente(false)}>Annuler</button>
+                </div>
+              </div>
+            )}
 
             {!semaineFilter ? (
               <div className="empty-state">Sélectionnez une semaine</div>
