@@ -271,16 +271,20 @@ export default function ImportPage() {
       const m = await loadMappings()
 
       // Load existing refs
-      const { data: existingVentes } = await supabase.from('ventes').select('ref_transaction').not('ref_transaction', 'is', null)
-      const refs = new Set(existingVentes?.map(v => v.ref_transaction) || [])
+      const { data: existingVentes } = await supabase
+        .from('ventes').select('ref_transaction, description, prix_ttc').not('ref_transaction', 'is', null)
+      const refs = new Set(existingVentes?.map(v => `${v.ref_transaction}||${v.description}||${v.prix_ttc}`) || [])
       setExistingRefs(refs)
 
       // Dedup within file
+      // IMPORTANT: SumUp exports ONE LINE PER ARTICLE for a single transaction
+      // (same ref_transaction, different articles). We must NOT dedup by ref alone.
+      // Dedup key = ref + description + prix to catch true duplicates only.
       const seenRefs = new Set()
       const deduped = []
       let dupCount = 0
       result.ventes.forEach(v => {
-        const key = v.ref_transaction || `${v.date_vente}|${v.description}|${v.prix_ttc}`
+        const key = v._dedup_key || `${v.date_vente}|${v.description}|${v.prix_ttc}`
         if (seenRefs.has(key)) { dupCount++; return }
         seenRefs.add(key)
         const mapped = m[v.description?.toLowerCase()]
@@ -369,7 +373,11 @@ export default function ImportPage() {
         }
 
         // Filter duplicates
-        const toInsert = group.ventes.filter(v => !v.ref_transaction || !existingRefs.has(v.ref_transaction))
+        const toInsert = group.ventes.filter(v => {
+          if (!v._dedup_key && !v.ref_transaction) return true
+          const key = v._dedup_key || v.ref_transaction
+          return !existingRefs.has(key)
+        })
         const skipped = group.ventes.length - toInsert.length
 
         // Insert in batches
