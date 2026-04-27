@@ -242,6 +242,10 @@ export default function StockPage() {
   const [showArticleForm, setShowArticleForm] = useState(false)
   const [articleForm, setArticleForm] = useState({ nom:'', unite_stock:'fût', contenance_litres:'', methode_valorisation:'fifo', ordre:0 })
   const [editArticleId, setEditArticleId] = useState(null)
+  const [showAssocForm, setShowAssocForm] = useState(null) // article_id
+  const [assocForm, setAssocForm] = useState({ produit_vendu:'', consommation_par_vente:'', unite:'L', notes:'' })
+  const [editAssocId, setEditAssocId] = useState(null)
+  const [produits, setProduits] = useState([])
 
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -253,16 +257,18 @@ export default function StockPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: arts }, { data: mvts }, { data: assocs }, { data: sems }] = await Promise.all([
+    const [{ data: arts }, { data: mvts }, { data: assocs }, { data: sems }, { data: prods }] = await Promise.all([
       supabase.from('articles_stock').select('*').eq('actif', true).order('ordre'),
       supabase.from('mouvements_stock').select('*, articles_stock(nom, unite_stock, contenance_litres, methode_valorisation)').order('date_mouvement').order('created_at'),
       supabase.from('stock_associations').select('*, articles_stock(nom)').order('article_stock_id'),
       supabase.from('semaines').select('*').order('annee', { ascending:false }).order('numero', { ascending:false }),
+      supabase.from('produits').select('nom, categorie').eq('actif', true).order('categorie').order('nom'),
     ])
     setArticles(arts || [])
     setMouvements(mvts || [])
     setAssociations(assocs || [])
     setSemaines(sems || [])
+    setProduits(prods || [])
     setLoading(false)
   }
 
@@ -423,6 +429,32 @@ export default function StockPage() {
 
   const totalValeurStock = articles.reduce((s, a) => s + getStockArticle(a).valeurStock, 0)
   const totalSorties = mvtsSemaine.filter(m => m.type_mouvement === 'sortie').reduce((s, m) => s + (m.cout_total || 0), 0)
+
+  async function saveAssoc() {
+    if (!assocForm.produit_vendu || !assocForm.consommation_par_vente) return
+    const payload = {
+      article_stock_id: showAssocForm,
+      produit_vendu: assocForm.produit_vendu,
+      consommation_par_vente: parseFloat(assocForm.consommation_par_vente),
+      unite: assocForm.unite,
+      notes: assocForm.notes || null,
+    }
+    if (editAssocId) {
+      await supabase.from('stock_associations').update(payload).eq('id', editAssocId)
+    } else {
+      await supabase.from('stock_associations').insert(payload)
+    }
+    setAssocForm({ produit_vendu:'', consommation_par_vente:'', unite:'L', notes:'' })
+    setEditAssocId(null)
+    setShowAssocForm(null)
+    load()
+  }
+
+  async function deleteAssoc(id) {
+    if (!confirm('Supprimer cette association ?')) return
+    await supabase.from('stock_associations').delete().eq('id', id)
+    load()
+  }
 
   async function saveArticle() {
     if (!articleForm.nom.trim()) return
@@ -694,7 +726,7 @@ export default function StockPage() {
                     <label className="form-label">Unité</label>
                     <select className="form-select" value={articleForm.unite_stock}
                       onChange={e => setArticleForm(f=>({...f,unite_stock:e.target.value}))}>
-                      {['fût','bouteille','canette','bag-in-box','carton','pièce'].map(u => <option key={u}>{u}</option>)}
+                      {['litre','bouteille','canette','bag-in-box','carton','pièce'].map(u => <option key={u}>{u}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
@@ -765,10 +797,72 @@ export default function StockPage() {
 
             <div className="card">
               <div className="card-title">Associations article → produits vendus</div>
-              <p className="text-muted text-sm mb-16">Définit la consommation par vente — utilisé pour calculer automatiquement les sorties</p>
+              <p className="text-muted text-sm mb-16">
+                Définit combien de litres (ou unités) sont consommés par vente d'un produit SumUp.
+                Ex : Bière en litres → Pichet = 1,5L, Verre = 0,25L
+              </p>
+
+              {/* Formulaire ajout/modif association */}
+              {showAssocForm && (
+                <div style={{ background:'var(--gray-50)', border:'1px solid var(--gray-200)', borderRadius:8, padding:16, marginBottom:16 }}>
+                  <div style={{ fontWeight:600, fontSize:13, marginBottom:10 }}>
+                    {editAssocId ? 'Modifier' : 'Nouvelle'} association — {articles.find(a => a.id === showAssocForm)?.nom}
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 2fr', gap:10, marginBottom:10 }}>
+                    <div className="form-group">
+                      <label className="form-label">Produit vendu (SumUp) *</label>
+                      <select className="form-select" value={assocForm.produit_vendu}
+                        onChange={e => setAssocForm(f=>({...f, produit_vendu:e.target.value}))}>
+                        <option value="">— Choisir —</option>
+                        {produits.map(p => <option key={p.nom} value={p.nom}>{p.categorie} — {p.nom}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Consommation *</label>
+                      <input className="form-input" type="number" step="0.01" min="0"
+                        value={assocForm.consommation_par_vente}
+                        onChange={e => setAssocForm(f=>({...f, consommation_par_vente:e.target.value}))}
+                        placeholder="Ex: 1.5" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Unité</label>
+                      <select className="form-select" value={assocForm.unite}
+                        onChange={e => setAssocForm(f=>({...f, unite:e.target.value}))}>
+                        <option value="L">Litres (L)</option>
+                        <option value="unité">Unité</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Notes</label>
+                      <input className="form-input" value={assocForm.notes}
+                        onChange={e => setAssocForm(f=>({...f, notes:e.target.value}))}
+                        placeholder="Ex: Pichet = 1,5L" />
+                    </div>
+                  </div>
+                  <div className="flex-gap">
+                    <button className="btn btn-primary btn-sm" onClick={saveAssoc}
+                      disabled={!assocForm.produit_vendu || !assocForm.consommation_par_vente}>
+                      💾 {editAssocId ? 'Mettre à jour' : 'Ajouter'}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => { setShowAssocForm(null); setEditAssocId(null); setAssocForm({ produit_vendu:'', consommation_par_vente:'', unite:'L', notes:'' }) }}>
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Article stock</th><th>Produit vendu (SumUp)</th><th className="num">Conso/vente</th><th>Unité</th><th>Notes</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Article stock</th>
+                      <th>Produit vendu (SumUp)</th>
+                      <th className="num">Conso/vente</th>
+                      <th>Unité</th>
+                      <th>Notes</th>
+                      <th></th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {associations.map(x => (
                       <tr key={x.id}>
@@ -776,11 +870,31 @@ export default function StockPage() {
                         <td>{x.produit_vendu}</td>
                         <td className="num">{x.consommation_par_vente}</td>
                         <td>{x.unite}</td>
-                        <td className="text-muted">{x.notes || '—'}</td>
+                        <td className="text-muted" style={{ fontSize:12 }}>{x.notes || '—'}</td>
+                        <td>
+                          <div className="flex-gap">
+                            <button className="btn btn-sm" onClick={() => {
+                              setAssocForm({ produit_vendu: x.produit_vendu, consommation_par_vente: x.consommation_par_vente, unite: x.unite, notes: x.notes || '' })
+                              setEditAssocId(x.id)
+                              setShowAssocForm(x.article_stock_id)
+                            }}>✏️</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => deleteAssoc(x.id)}>🗑️</button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Bouton ajouter association par article */}
+              <div style={{ marginTop:16, display:'flex', flexWrap:'wrap', gap:8 }}>
+                {articles.map(a => (
+                  <button key={a.id} className="btn btn-sm"
+                    onClick={() => { setShowAssocForm(a.id); setEditAssocId(null); setAssocForm({ produit_vendu:'', consommation_par_vente:'', unite: a.unite_stock === 'canette' ? 'unité' : 'L', notes:'' }) }}>
+                    + Association pour {a.nom}
+                  </button>
+                ))}
               </div>
             </div>
           </>
