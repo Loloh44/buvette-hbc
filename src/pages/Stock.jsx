@@ -340,7 +340,24 @@ export default function StockPage() {
         .eq('type_mouvement', 'sortie')
         .single()
 
-      if (existing) { nbIgnores++; continue }
+      // Supprimer sortie existante non envoyée au bilan (on recalcule)
+      if (existing) {
+        await supabase.from('mouvements_stock')
+          .delete()
+          .eq('article_stock_id', article.id)
+          .eq('semaine_id', semaineId)
+          .eq('type_mouvement', 'sortie')
+          .eq('envoye_bilan', false)
+        // Si envoyée au bilan, on ignore pour ne pas casser le bilan
+        const { data: envoyee } = await supabase
+          .from('mouvements_stock').select('id')
+          .eq('article_stock_id', article.id)
+          .eq('semaine_id', semaineId)
+          .eq('type_mouvement', 'sortie')
+          .eq('envoye_bilan', true)
+          .single()
+        if (envoyee) { nbIgnores++; continue }
+      }
 
       // Calculer la consommation
       let totalLitres = 0

@@ -434,6 +434,124 @@ export default function ImportPage() {
     setStep('done')
     setLoading(false)
     loadSemaines()
+
+    // Calcul automatique des sorties de stock pour chaque semaine importée
+    const semainesImportees = results.filter(r => r.ok && r.inserted > 0).map(r => r.group.semaineId).filter(Boolean)
+    for (const sid of semainesImportees) {
+      await calculerSortiesStock(sid)
+    }
+  }
+
+  // ── Calcul automatique sorties stock ─────────────────────────────────────
+  async function calculerSortiesStock(sid) {
+    try {
+      const [{ data: articles }, { data: associations }, { data: sem }] = await Promise.all([
+        supabase.from('articles_stock').select('*').eq('actif', true),
+        supabase.from('stock_associations').select('*'),
+        supabase.from('semaines').select('date_fin').eq('id', sid).single(),
+      ])
+
+      if (!articles?.length || !associations?.length) return
+
+      // Charger les ventes de la semaine
+      const { data: ventes } = await supabase
+        .from('ventes')
+        .select('description, quantite')
+        .eq('semaine_id', sid)
+        .eq('type_transaction', 'Vente')
+
+      const qtesVendues = {}
+      ventes?.forEach(v => {
+        qtesVendues[v.description] = (qtesVendues[v.description] || 0) + (v.quantite || 0)
+      })
+
+      // Charger tous les mouvements pour calcul FIFO/PUMP
+      const { data: tousMovements } = await supabase
+        .from('mouvements_stock')
+        .select('*')
+        .order('date_mouvement')
+        .order('created_at')
+
+      for (const article of articles) {
+        const assocs = associations.filter(a => a.article_stock_id === article.id)
+        if (!assocs.length) continue
+
+        let totalConso = 0
+        const detailVentes = []
+        for (const assoc of assocs) {
+          const qteVendue = qtesVendues[assoc.produit_vendu] || 0
+          if (qteVendue === 0) continue
+          const conso = qteVendue * assoc.consommation_par_vente
+          totalConso += conso
+          detailVentes.push(`${assoc.produit_vendu}(${qteVendue})`)
+        }
+        if (totalConso === 0) continue
+
+        // Convertir en unités stock
+        const isPUMP = article.methode_valorisation === 'pump'
+        const contenance = article.contenance_litres || 1
+        const isUnite = assocs[0]?.unite === 'unité'
+        const unitesSorties = Math.round((isUnite ? totalConso : totalConso / contenance) * 1000) / 1000
+
+        // Calcul coût selon méthode
+        const mvtsArticle = (tousMovements || [])
+          .filter(m => m.article_stock_id === article.id)
+          .filter(m => m.semaine_id !== sid || m.type_mouvement !== 'sortie') // exclure sortie existante de cette semaine
+
+        let coutTotal = 0
+        if (isPUMP) {
+          let qte = 0, val = 0
+          for (const m of mvtsArticle) {
+            if (m.type_mouvement === 'entree') { val += (m.cout_unitaire||0)*m.quantite; qte += m.quantite }
+            else if (m.type_mouvement === 'sortie') { const p = qte>0?val/qte:0; val -= p*m.quantite; qte -= m.quantite }
+          }
+          const pump = qte > 0 ? val / qte : 0
+          coutTotal = Math.round(unitesSorties * pump * 100) / 100
+        } else {
+          // FIFO
+          const lots = []
+          for (const m of mvtsArticle) {
+            if (m.type_mouvement === 'entree') lots.push({ quantite_restante: m.quantite, cout_unitaire: m.cout_unitaire || 0 })
+            else if (m.type_mouvement === 'sortie') {
+              let r = m.quantite
+              for (const l of lots) { if (r <= 0) break; const p = Math.min(r, l.quantite_restante); l.quantite_restante -= p; r -= p }
+            }
+          }
+          let reste = unitesSorties
+          for (const lot of lots) {
+            if (reste <= 0) break
+            const pris = Math.min(reste, lot.quantite_restante)
+            coutTotal += pris * lot.cout_unitaire
+            reste -= pris
+          }
+          coutTotal = Math.round(coutTotal * 100) / 100
+        }
+
+        const coutUnitaire = unitesSorties > 0 ? coutTotal / unitesSorties : 0
+
+        // Supprimer sortie existante non envoyée au bilan et recréer
+        await supabase.from('mouvements_stock')
+          .delete()
+          .eq('article_stock_id', article.id)
+          .eq('semaine_id', sid)
+          .eq('type_mouvement', 'sortie')
+          .eq('envoye_bilan', false)
+
+        await supabase.from('mouvements_stock').insert({
+          article_stock_id: article.id,
+          semaine_id: sid,
+          type_mouvement: 'sortie',
+          quantite: unitesSorties,
+          cout_unitaire: Math.round(coutUnitaire * 10000) / 10000,
+          cout_total: coutTotal,
+          date_mouvement: sem?.date_fin || new Date().toISOString().slice(0, 10),
+          notes: `Auto import : ${detailVentes.join(', ')}`,
+          envoye_bilan: false,
+        })
+      }
+    } catch (e) {
+      console.error('Stock calc error:', e)
+    }
   }
 
   // Manage
