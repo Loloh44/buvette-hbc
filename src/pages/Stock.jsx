@@ -4,34 +4,53 @@ import { fmt } from '../lib/sumup'
 import SemaineSelector from '../components/SemaineSelector.jsx'
 
 // ─── Calcul FIFO ──────────────────────────────────────────────────────────────
-// Retourne le coût total d'une sortie selon FIFO
 function calculerFIFO(lots, qteSortie) {
-  // lots = [{quantite_restante, cout_unitaire}] triés par date croissante
   let reste = qteSortie
   let coutTotal = 0
   const detail = []
   for (const lot of lots) {
-    if (reste <= 0) break
+    if (reste <= 0.0001) break
     const pris = Math.min(reste, lot.quantite_restante)
     coutTotal += pris * lot.cout_unitaire
     detail.push({ pris, cout_unitaire: lot.cout_unitaire })
     reste -= pris
   }
-  return { coutTotal: Math.round(coutTotal * 100) / 100, detail, manquant: reste }
+  return {
+    coutTotal: Math.round(coutTotal * 100) / 100,
+    detail,
+    manquant: Math.max(0, Math.round(reste * 1000) / 1000)
+  }
+}
+
+// ─── Calcul PUMP ──────────────────────────────────────────────────────────────
+function calculerPUMP(mouvements) {
+  let qteTotal = 0, valeurTotal = 0
+  for (const m of mouvements) {
+    if (m.type_mouvement === 'entree') {
+      valeurTotal += (m.cout_unitaire || 0) * m.quantite
+      qteTotal += m.quantite
+    } else if (m.type_mouvement === 'sortie') {
+      const pump = qteTotal > 0 ? valeurTotal / qteTotal : 0
+      valeurTotal -= pump * m.quantite
+      qteTotal -= m.quantite
+    }
+  }
+  const pump = qteTotal > 0 ? valeurTotal / qteTotal : 0
+  return {
+    qteStock: Math.round(qteTotal * 1000) / 1000,
+    valeurStock: Math.round(valeurTotal * 100) / 100,
+    pump: Math.round(pump * 10000) / 10000
+  }
 }
 
 // ─── Modal Entrée Stock ───────────────────────────────────────────────────────
-function EntreeModal({ article, semaines, achats, onSave, onClose }) {
+function EntreeModal({ article, semaines, onSave, onClose }) {
   const [form, setForm] = useState({
-    quantite: '',
-    cout_unitaire: '',
+    quantite: '', cout_unitaire: '',
     date_mouvement: new Date().toISOString().slice(0, 10),
-    semaine_id: '',
-    achat_id: '',
-    notes: '',
+    semaine_id: '', notes: '',
   })
   const [saving, setSaving] = useState(false)
-
   const coutTotal = (parseFloat(form.quantite) || 0) * (parseFloat(form.cout_unitaire) || 0)
 
   async function handleSave() {
@@ -40,7 +59,6 @@ function EntreeModal({ article, semaines, achats, onSave, onClose }) {
     await supabase.from('mouvements_stock').insert({
       article_stock_id: article.id,
       semaine_id: form.semaine_id || null,
-      achat_id: form.achat_id || null,
       type_mouvement: 'entree',
       quantite: parseFloat(form.quantite),
       cout_unitaire: parseFloat(form.cout_unitaire),
@@ -52,51 +70,56 @@ function EntreeModal({ article, semaines, achats, onSave, onClose }) {
     onSave()
   }
 
+  const isPUMP = article.methode_valorisation === 'pump'
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
       <div style={{ background:'white', borderRadius:12, padding:28, width:460 }}>
         <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>📦 Entrée en stock</div>
-        <div style={{ fontSize:13, color:'var(--gray-400)', marginBottom:20 }}>{article.nom} — {article.unite_stock}</div>
-
+        <div style={{ fontSize:13, color:'var(--gray-400)', marginBottom:4 }}>{article.nom}</div>
+        <div style={{ marginBottom:20 }}>
+          <span className={`badge ${isPUMP ? 'badge-amber' : 'badge-blue'}`}>
+            {isPUMP ? '⚖️ PUMP' : '📋 FIFO'}
+          </span>
+        </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
           <div className="form-group">
             <label className="form-label">Quantité ({article.unite_stock}) *</label>
-            <input className="form-input" type="number" step="0.5" min="0" value={form.quantite}
-              onChange={e => setForm(f=>({...f, quantite:e.target.value}))} placeholder="Ex: 5" autoFocus />
+            <input className="form-input" type="number" step="0.5" min="0"
+              value={form.quantite} onChange={e => setForm(f=>({...f,quantite:e.target.value}))} autoFocus />
           </div>
           <div className="form-group">
-            <label className="form-label">Prix unitaire (€) *</label>
-            <input className="form-input" type="number" step="0.01" min="0" value={form.cout_unitaire}
-              onChange={e => setForm(f=>({...f, cout_unitaire:e.target.value}))} placeholder="Ex: 120.00" />
+            <label className="form-label">
+              {isPUMP ? 'Prix unitaire (€) — recalcule le PUMP' : 'Prix unitaire (€) *'}
+            </label>
+            <input className="form-input" type="number" step="0.01" min="0"
+              value={form.cout_unitaire} onChange={e => setForm(f=>({...f,cout_unitaire:e.target.value}))} />
           </div>
           <div className="form-group">
             <label className="form-label">Date réception</label>
             <input className="form-input" type="date" value={form.date_mouvement}
-              onChange={e => setForm(f=>({...f, date_mouvement:e.target.value}))} />
+              onChange={e => setForm(f=>({...f,date_mouvement:e.target.value}))} />
           </div>
           <div className="form-group">
-            <label className="form-label">Semaine (optionnel)</label>
-            <select className="form-select" value={form.semaine_id} onChange={e => setForm(f=>({...f, semaine_id:e.target.value}))}>
+            <label className="form-label">Semaine</label>
+            <select className="form-select" value={form.semaine_id} onChange={e => setForm(f=>({...f,semaine_id:e.target.value}))}>
               <option value="">— Aucune —</option>
-              {semaines.map(s => <option key={s.id} value={s.id}>{s.annee} S{s.numero} {s.theme ? `— ${s.theme}` : ''}</option>)}
+              {semaines.map(s => <option key={s.id} value={s.id}>{s.annee} S{s.numero}{s.theme ? ` — ${s.theme}` : ''}</option>)}
             </select>
           </div>
         </div>
-
         <div className="form-group" style={{ marginBottom:16 }}>
-          <label className="form-label">Notes (lien facture, fournisseur...)</label>
-          <input className="form-input" value={form.notes} onChange={e => setForm(f=>({...f, notes:e.target.value}))}
+          <label className="form-label">Notes (facture, fournisseur...)</label>
+          <input className="form-input" value={form.notes} onChange={e => setForm(f=>({...f,notes:e.target.value}))}
             placeholder="Ex: Facture Promocash 175910" />
         </div>
-
         {coutTotal > 0 && (
           <div style={{ background:'var(--green-light)', borderRadius:8, padding:12, marginBottom:16, fontSize:13 }}>
             <strong style={{ color:'var(--green)' }}>
-              Valeur entrée : {parseFloat(form.quantite)} {article.unite_stock} × {fmt(parseFloat(form.cout_unitaire))} = {fmt(coutTotal)}
+              {parseFloat(form.quantite)} {article.unite_stock} × {fmt(parseFloat(form.cout_unitaire))} = {fmt(coutTotal)}
             </strong>
           </div>
         )}
-
         <div className="flex-gap">
           <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.quantite || !form.cout_unitaire}>
             {saving ? <span className="spinner"/> : '📦'} Enregistrer l'entrée
@@ -108,79 +131,50 @@ function EntreeModal({ article, semaines, achats, onSave, onClose }) {
   )
 }
 
-// ─── Modal Calcul Sorties Semaine ─────────────────────────────────────────────
-function SortiesModal({ article, associations, semaineId, lots, onSave, onClose }) {
-  const [ventesData, setVentesData] = useState([])
-  const [loading, setLoading] = useState(true)
+// ─── Modal Valider sortie → Bilan ─────────────────────────────────────────────
+function ValidBilanModal({ sortie, article, semaine, onSave, onClose }) {
+  const [form, setForm] = useState({
+    libelle: `Stock ${article.nom} — S${semaine?.numero || ''} ${semaine?.annee || ''}`,
+    montant: sortie.cout_total || 0,
+    produit_fini: '',
+  })
+  const [produits, setProduits] = useState([])
   const [saving, setSaving] = useState(false)
-  const [sortiesCalc, setSortiesCalc] = useState([])
 
-  useEffect(() => { calcSorties() }, [])
-
-  async function calcSorties() {
-    setLoading(true)
-    // Charger les ventes de la semaine pour les produits associés
-    const produits = associations.map(a => a.produit_vendu)
-    const { data: ventes } = await supabase
-      .from('ventes')
-      .select('description, quantite')
-      .eq('semaine_id', semaineId)
-      .eq('type_transaction', 'Vente')
-      .in('description', produits)
-
-    const qtesVendues = {}
-    ventes?.forEach(v => {
-      qtesVendues[v.description] = (qtesVendues[v.description] || 0) + (v.quantite || 0)
-    })
-
-    // Calculer les sorties par produit
-    let totalLitres = 0
-    const detail = associations.map(assoc => {
-      const qteVendue = qtesVendues[assoc.produit_vendu] || 0
-      const litresConsommes = qteVendue * assoc.consommation_par_vente
-      totalLitres += litresConsommes
-      return {
-        produit: assoc.produit_vendu,
-        qteVendue,
-        conso: assoc.consommation_par_vente,
-        unite: assoc.unite,
-        litresTotal: litresConsommes,
-      }
-    })
-
-    // Convertir litres → unités stock (selon contenance)
-    const contenance = article.contenance_litres || 1
-    const unitesSorties = article.unite_stock === 'canette' || article.unite_stock === 'bouteille'
-      ? totalLitres / contenance
-      : totalLitres / contenance // fûts aussi
-
-    // Calcul FIFO
-    const fifo = calculerFIFO(lots, unitesSorties)
-
-    setSortiesCalc({ detail, totalLitres, unitesSorties: Math.round(unitesSorties * 1000) / 1000, fifo })
-    setVentesData(qtesVendues)
-    setLoading(false)
-  }
+  useEffect(() => {
+    supabase.from('produits').select('nom, categorie').eq('actif', true).order('categorie').order('nom')
+      .then(({ data }) => setProduits(data || []))
+  }, [])
 
   async function handleSave() {
-    if (!sortiesCalc || sortiesCalc.unitesSorties <= 0) return
     setSaving(true)
+    // Créer ligne d'achat
+    const { data: achat } = await supabase.from('achats').insert({
+      semaine_id: semaine.id,
+      fournisseur: 'Stock',
+      date_achat: semaine.date_fin,
+      article: form.libelle,
+      total_ht: Math.round(form.montant / 1.055 * 100) / 100,
+      taux_tva: 0.055,
+      total_ttc: form.montant,
+    }).select().single()
 
-    // Récupérer la date de fin de semaine
-    const { data: sem } = await supabase.from('semaines').select('date_fin').eq('id', semaineId).single()
+    // Imputation si produit sélectionné
+    if (achat && form.produit_fini) {
+      const cat = produits.find(p => p.nom === form.produit_fini)?.categorie
+      await supabase.from('imputations').insert({
+        achat_id: achat.id,
+        produit_fini: form.produit_fini,
+        categorie: cat || null,
+        cout_total_categorie: form.montant,
+      })
+    }
 
-    await supabase.from('mouvements_stock').insert({
-      article_stock_id: article.id,
-      semaine_id: semaineId,
-      type_mouvement: 'sortie',
-      quantite: sortiesCalc.unitesSorties,
-      cout_unitaire: sortiesCalc.unitesSorties > 0
-        ? Math.round(sortiesCalc.fifo.coutTotal / sortiesCalc.unitesSorties * 10000) / 10000
-        : 0,
-      cout_total: sortiesCalc.fifo.coutTotal,
-      date_mouvement: sem?.date_fin || new Date().toISOString().slice(0, 10),
-      notes: `Calculé auto depuis ventes : ${sortiesCalc.detail.map(d => `${d.produit}(${d.qteVendue})`).join(', ')}`,
-    })
+    // Marquer la sortie comme envoyée au bilan
+    await supabase.from('mouvements_stock').update({
+      envoye_bilan: true,
+      achat_genere_id: achat?.id || null,
+    }).eq('id', sortie.id)
 
     setSaving(false)
     onSave()
@@ -188,69 +182,41 @@ function SortiesModal({ article, associations, semaineId, lots, onSave, onClose 
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-      <div style={{ background:'white', borderRadius:12, padding:28, width:520, maxHeight:'90vh', overflow:'auto' }}>
-        <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>📊 Calculer les sorties</div>
-        <div style={{ fontSize:13, color:'var(--gray-400)', marginBottom:20 }}>{article.nom} — depuis les ventes de la semaine</div>
+      <div style={{ background:'white', borderRadius:12, padding:28, width:480 }}>
+        <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>📋 Envoyer au bilan</div>
+        <div style={{ fontSize:13, color:'var(--gray-400)', marginBottom:20 }}>
+          Crée une ligne d'achat dans le bilan de la semaine
+        </div>
 
-        {loading ? <div className="loading-page" style={{ minHeight:80 }}><div className="spinner"/></div> : (
-          <>
-            <div className="card mb-16">
-              <div className="card-title">Ventes de la semaine</div>
-              <table>
-                <thead><tr><th>Produit vendu</th><th className="num">Qté vendue</th><th className="num">Conso/vente</th><th className="num">Total consommé</th></tr></thead>
-                <tbody>
-                  {sortiesCalc.detail.map(d => (
-                    <tr key={d.produit}>
-                      <td>{d.produit}</td>
-                      <td className="num">{d.qteVendue}</td>
-                      <td className="num">{d.conso} {d.unite}</td>
-                      <td className="num positive">{d.litresTotal.toFixed(2)} {d.unite}</td>
-                    </tr>
-                  ))}
-                  <tr className="tr-total">
-                    <td colSpan={3}>Total consommé</td>
-                    <td className="num">{sortiesCalc.totalLitres.toFixed(2)} L</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+        <div style={{ background:'var(--gray-50)', borderRadius:8, padding:12, marginBottom:16, fontSize:13 }}>
+          <div>Article : <strong>{article.nom}</strong></div>
+          <div>Quantité : <strong>{sortie.quantite} {article.unite_stock}</strong></div>
+          <div>Méthode : <strong>{article.methode_valorisation?.toUpperCase()}</strong></div>
+          <div style={{ color:'var(--red)', fontWeight:700, marginTop:4 }}>Coût calculé : {fmt(sortie.cout_total)}</div>
+        </div>
 
-            <div className="card mb-16">
-              <div className="card-title">Calcul FIFO</div>
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Contenance par {article.unite_stock}</td>
-                    <td className="num">{article.contenance_litres} L</td>
-                  </tr>
-                  <tr>
-                    <td>Unités sorties ({article.unite_stock})</td>
-                    <td className="num"><strong>{sortiesCalc.unitesSorties}</strong></td>
-                  </tr>
-                  <tr className="tr-total">
-                    <td>Coût FIFO</td>
-                    <td className="num negative"><strong>{fmt(sortiesCalc.fifo.coutTotal)}</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-              {sortiesCalc.fifo.detail.length > 0 && (
-                <div style={{ marginTop:8, fontSize:11, color:'var(--gray-400)' }}>
-                  Détail lots : {sortiesCalc.fifo.detail.map(d => `${d.pris.toFixed(2)} × ${fmt(d.cout_unitaire)}`).join(' + ')}
-                </div>
-              )}
-              {sortiesCalc.fifo.manquant > 0.001 && (
-                <div className="alert alert-warning mt-8">
-                  ⚠️ Stock insuffisant — manque {sortiesCalc.fifo.manquant.toFixed(2)} {article.unite_stock}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+        <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:16 }}>
+          <div className="form-group">
+            <label className="form-label">Libellé dans le bilan</label>
+            <input className="form-input" value={form.libelle} onChange={e => setForm(f=>({...f,libelle:e.target.value}))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Montant (€) — modifiable</label>
+            <input className="form-input" type="number" step="0.01" value={form.montant}
+              onChange={e => setForm(f=>({...f,montant:parseFloat(e.target.value)||0}))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Imputer à un produit fini (optionnel)</label>
+            <select className="form-select" value={form.produit_fini} onChange={e => setForm(f=>({...f,produit_fini:e.target.value}))}>
+              <option value="">— Sans imputation —</option>
+              {produits.map(p => <option key={p.nom} value={p.nom}>{p.categorie} — {p.nom}</option>)}
+            </select>
+          </div>
+        </div>
 
         <div className="flex-gap">
-          <button className="btn btn-primary" onClick={handleSave}
-            disabled={saving || loading || !sortiesCalc || sortiesCalc.unitesSorties <= 0}>
-            {saving ? <span className="spinner"/> : '💾'} Enregistrer la sortie ({sortiesCalc?.unitesSorties || 0} {article.unite_stock})
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? <span className="spinner"/> : '📋'} Créer la ligne d'achat
           </button>
           <button className="btn" onClick={onClose}>Annuler</button>
         </div>
@@ -266,24 +232,30 @@ export default function StockPage() {
   const [associations, setAssociations] = useState([])
   const [semaines, setSemaines] = useState([])
   const [semaineId, setSemaineId] = useState('')
+  const [semaine, setSemaine] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('stock') // stock | mouvements | articles
+  const [calcLoading, setCalcLoading] = useState(false)
+  const [tab, setTab] = useState('stock')
   const [entreeModal, setEntreeModal] = useState(null)
-  const [sortiesModal, setSortiesModal] = useState(null)
+  const [validBilanModal, setValidBilanModal] = useState(null)
   const [alert, setAlert] = useState(null)
-
-  // Gestion des articles
   const [showArticleForm, setShowArticleForm] = useState(false)
-  const [articleForm, setArticleForm] = useState({ nom:'', unite_stock:'fût', contenance_litres:'', ordre:0 })
+  const [articleForm, setArticleForm] = useState({ nom:'', unite_stock:'fût', contenance_litres:'', methode_valorisation:'fifo', ordre:0 })
   const [editArticleId, setEditArticleId] = useState(null)
 
   useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (semaineId) {
+      const s = semaines.find(s => s.id === semaineId)
+      setSemaine(s || null)
+    }
+  }, [semaineId, semaines])
 
   async function load() {
     setLoading(true)
     const [{ data: arts }, { data: mvts }, { data: assocs }, { data: sems }] = await Promise.all([
       supabase.from('articles_stock').select('*').eq('actif', true).order('ordre'),
-      supabase.from('mouvements_stock').select('*, articles_stock(nom, unite_stock, contenance_litres)').order('date_mouvement'),
+      supabase.from('mouvements_stock').select('*, articles_stock(nom, unite_stock, contenance_litres, methode_valorisation)').order('date_mouvement').order('created_at'),
       supabase.from('stock_associations').select('*, articles_stock(nom)').order('article_stock_id'),
       supabase.from('semaines').select('*').order('annee', { ascending:false }).order('numero', { ascending:false }),
     ])
@@ -294,59 +266,154 @@ export default function StockPage() {
     setLoading(false)
   }
 
-  // ── Calcul stock actuel par article (FIFO) ─────────────────────────────────
-  function getStockArticle(articleId) {
+  // ── Calcul stock par article ──────────────────────────────────────────────
+  function getStockArticle(article) {
     const mvtsArticle = mouvements
-      .filter(m => m.article_stock_id === articleId)
-      .sort((a, b) => new Date(a.date_mouvement) - new Date(b.date_mouvement))
+      .filter(m => m.article_stock_id === article.id)
+      .sort((a, b) => new Date(a.date_mouvement) - new Date(b.date_mouvement) || new Date(a.created_at) - new Date(b.created_at))
 
-    // Reconstituer les lots FIFO
+    if (article.methode_valorisation === 'pump') {
+      return { ...calculerPUMP(mvtsArticle), lots: [], methode: 'pump' }
+    }
+
+    // FIFO
     const lots = []
     let qteStock = 0
     let valeurStock = 0
-
     for (const m of mvtsArticle) {
       if (m.type_mouvement === 'entree') {
-        lots.push({ quantite_restante: m.quantite, cout_unitaire: m.cout_unitaire, date: m.date_mouvement })
+        lots.push({ quantite_restante: m.quantite, cout_unitaire: m.cout_unitaire || 0, date: m.date_mouvement })
         qteStock += m.quantite
         valeurStock += m.cout_total || 0
       } else if (m.type_mouvement === 'sortie') {
-        let sortiReste = m.quantite
+        let reste = m.quantite
         qteStock -= m.quantite
         for (const lot of lots) {
-          if (sortiReste <= 0) break
-          const pris = Math.min(sortiReste, lot.quantite_restante)
+          if (reste <= 0.0001) break
+          const pris = Math.min(reste, lot.quantite_restante)
           lot.quantite_restante -= pris
           valeurStock -= pris * lot.cout_unitaire
-          sortiReste -= pris
+          reste -= pris
         }
       }
     }
-
-    const coutMoyen = qteStock > 0 ? valeurStock / qteStock : 0
-    return { qteStock: Math.round(qteStock * 1000) / 1000, valeurStock: Math.round(valeurStock * 100) / 100, coutMoyen: Math.round(coutMoyen * 100) / 100, lots: lots.filter(l => l.quantite_restante > 0.001) }
+    return {
+      qteStock: Math.round(qteStock * 1000) / 1000,
+      valeurStock: Math.round(valeurStock * 100) / 100,
+      coutMoyen: qteStock > 0 ? Math.round(valeurStock / qteStock * 100) / 100 : 0,
+      lots: lots.filter(l => l.quantite_restante > 0.001),
+      methode: 'fifo'
+    }
   }
 
-  // Mouvements filtrés par semaine
-  const mvtsFiltres = semaineId
+  // ── Calcul automatique des sorties depuis les ventes ─────────────────────
+  async function calculerSortiesAuto() {
+    if (!semaineId) return
+    setCalcLoading(true)
+    setAlert(null)
+
+    // Charger toutes les ventes de la semaine
+    const { data: ventes } = await supabase
+      .from('ventes')
+      .select('description, quantite')
+      .eq('semaine_id', semaineId)
+      .eq('type_transaction', 'Vente')
+
+    const qtesVendues = {}
+    ventes?.forEach(v => {
+      qtesVendues[v.description] = (qtesVendues[v.description] || 0) + (v.quantite || 0)
+    })
+
+    let nbSorties = 0
+    let nbIgnores = 0
+
+    for (const article of articles) {
+      const assocs = associations.filter(a => a.article_stock_id === article.id)
+      if (!assocs.length) continue
+
+      // Vérifier si une sortie existe déjà pour cette semaine
+      const { data: existing } = await supabase
+        .from('mouvements_stock')
+        .select('id')
+        .eq('article_stock_id', article.id)
+        .eq('semaine_id', semaineId)
+        .eq('type_mouvement', 'sortie')
+        .single()
+
+      if (existing) { nbIgnores++; continue }
+
+      // Calculer la consommation
+      let totalLitres = 0
+      const detailVentes = []
+      for (const assoc of assocs) {
+        const qteVendue = qtesVendues[assoc.produit_vendu] || 0
+        if (qteVendue === 0) continue
+        const conso = qteVendue * assoc.consommation_par_vente
+        totalLitres += conso
+        detailVentes.push(`${assoc.produit_vendu}(${qteVendue})`)
+      }
+
+      if (totalLitres === 0) continue
+
+      // Convertir en unités stock
+      const contenance = article.contenance_litres || 1
+      const unitesSorties = article.unite_stock === 'canette' || assocs[0]?.unite === 'unité'
+        ? totalLitres // déjà en unités
+        : totalLitres / contenance
+
+      const qteArrondie = Math.round(unitesSorties * 1000) / 1000
+
+      // Calcul du coût selon méthode
+      const stockData = getStockArticle(article)
+      let coutTotal = 0
+      if (article.methode_valorisation === 'pump') {
+        coutTotal = Math.round(qteArrondie * (stockData.pump || 0) * 100) / 100
+      } else {
+        const fifo = calculerFIFO(stockData.lots, qteArrondie)
+        coutTotal = fifo.coutTotal
+      }
+
+      const coutUnitaire = qteArrondie > 0 ? coutTotal / qteArrondie : 0
+
+      await supabase.from('mouvements_stock').insert({
+        article_stock_id: article.id,
+        semaine_id: semaineId,
+        type_mouvement: 'sortie',
+        quantite: qteArrondie,
+        cout_unitaire: Math.round(coutUnitaire * 10000) / 10000,
+        cout_total: coutTotal,
+        date_mouvement: semaine?.date_fin || new Date().toISOString().slice(0, 10),
+        notes: `Auto depuis ventes : ${detailVentes.join(', ')}`,
+        envoye_bilan: false,
+      })
+      nbSorties++
+    }
+
+    setCalcLoading(false)
+    load()
+    setAlert({ type: nbSorties > 0 ? 'success' : 'warning',
+      msg: nbSorties > 0
+        ? `✅ ${nbSorties} sortie(s) calculée(s) depuis les ventes${nbIgnores > 0 ? ` (${nbIgnores} déjà existante(s))` : ''}`
+        : 'Aucune nouvelle sortie calculée — vérifiez les associations produits'
+    })
+  }
+
+  // Mouvements de la semaine
+  const mvtsSemaine = semaineId
     ? mouvements.filter(m => m.semaine_id === semaineId)
     : mouvements
+  const sortiesNonEnvoyees = mvtsSemaine.filter(m => m.type_mouvement === 'sortie' && !m.envoye_bilan)
 
-  const totalValeurStock = articles.reduce((s, a) => s + getStockArticle(a.id).valeurStock, 0)
+  const totalValeurStock = articles.reduce((s, a) => s + getStockArticle(a).valeurStock, 0)
+  const totalSorties = mvtsSemaine.filter(m => m.type_mouvement === 'sortie').reduce((s, m) => s + (m.cout_total || 0), 0)
 
   async function saveArticle() {
     if (!articleForm.nom.trim()) return
-    const payload = { nom: articleForm.nom.trim(), unite_stock: articleForm.unite_stock, contenance_litres: parseFloat(articleForm.contenance_litres) || null, ordre: parseInt(articleForm.ordre) || 0 }
+    const payload = { nom: articleForm.nom.trim(), unite_stock: articleForm.unite_stock, contenance_litres: parseFloat(articleForm.contenance_litres) || null, methode_valorisation: articleForm.methode_valorisation, ordre: parseInt(articleForm.ordre) || 0 }
     if (editArticleId) await supabase.from('articles_stock').update(payload).eq('id', editArticleId)
     else await supabase.from('articles_stock').insert(payload)
     setShowArticleForm(false); setEditArticleId(null)
-    setArticleForm({ nom:'', unite_stock:'fût', contenance_litres:'', ordre:0 })
-    load()
-  }
-
-  async function deleteArticle(id) {
-    if (!confirm('Supprimer cet article du stock ?')) return
-    await supabase.from('articles_stock').update({ actif: false }).eq('id', id)
+    setArticleForm({ nom:'', unite_stock:'fût', contenance_litres:'', methode_valorisation:'fifo', ordre:0 })
     load()
   }
 
@@ -359,34 +426,28 @@ export default function StockPage() {
   return (
     <div>
       {entreeModal && (
-        <EntreeModal
-          article={entreeModal}
-          semaines={semaines}
-          achats={[]}
-          onSave={() => { setEntreeModal(null); load(); setAlert({ type:'success', msg:'Entrée en stock enregistrée ✅' }) }}
-          onClose={() => setEntreeModal(null)}
-        />
+        <EntreeModal article={entreeModal} semaines={semaines}
+          onSave={() => { setEntreeModal(null); load(); setAlert({ type:'success', msg:'Entrée enregistrée ✅' }) }}
+          onClose={() => setEntreeModal(null)} />
       )}
-      {sortiesModal && (
-        <SortiesModal
-          article={sortiesModal}
-          associations={associations.filter(a => a.article_stock_id === sortiesModal.id)}
-          semaineId={semaineId}
-          lots={getStockArticle(sortiesModal.id).lots}
-          onSave={() => { setSortiesModal(null); load(); setAlert({ type:'success', msg:'Sorties calculées et enregistrées ✅' }) }}
-          onClose={() => setSortiesModal(null)}
-        />
+      {validBilanModal && semaine && (
+        <ValidBilanModal
+          sortie={validBilanModal}
+          article={articles.find(a => a.id === validBilanModal.article_stock_id)}
+          semaine={semaine}
+          onSave={() => { setValidBilanModal(null); load(); setAlert({ type:'success', msg:'Ligne d\'achat créée dans le bilan ✅' }) }}
+          onClose={() => setValidBilanModal(null)} />
       )}
 
       <div className="page-header">
         <div>
           <p className="page-title">📦 Gestion du stock</p>
-          <p className="page-subtitle">Boissons — valorisation FIFO — sorties automatiques depuis les ventes</p>
+          <p className="page-subtitle">Boissons — FIFO & PUMP — sorties depuis les ventes</p>
         </div>
         <div className="flex-gap">
           <SemaineSelector value={semaineId} onChange={setSemaineId} />
           {tab === 'articles' && (
-            <button className="btn btn-primary" onClick={() => { setShowArticleForm(true); setEditArticleId(null); setArticleForm({ nom:'', unite_stock:'fût', contenance_litres:'', ordre:0 }) }}>
+            <button className="btn btn-primary" onClick={() => { setShowArticleForm(true); setEditArticleId(null); setArticleForm({ nom:'', unite_stock:'fût', contenance_litres:'', methode_valorisation:'fifo', ordre:0 }) }}>
               + Nouvel article
             </button>
           )}
@@ -417,75 +478,121 @@ export default function StockPage() {
                 <div className="metric-sub">{articles.length} articles</div>
               </div>
               {semaineId && (
-                <div className="metric-card amber">
-                  <div className="metric-label">Sorties cette semaine</div>
-                  <div className="metric-value">
-                    {fmt(mvtsFiltres.filter(m => m.type_mouvement === 'sortie').reduce((s, m) => s + (m.cout_total || 0), 0))}
+                <>
+                  <div className="metric-card amber">
+                    <div className="metric-label">Sorties cette semaine</div>
+                    <div className="metric-value">{fmt(totalSorties)}</div>
+                    <div className="metric-sub">{mvtsSemaine.filter(m => m.type_mouvement === 'sortie').length} article(s)</div>
                   </div>
-                </div>
+                  <div className="metric-card" style={{ borderLeft:'3px solid var(--green)' }}>
+                    <div className="metric-label">En attente → Bilan</div>
+                    <div className="metric-value">{sortiesNonEnvoyees.length}</div>
+                    <div className="metric-sub">{fmt(sortiesNonEnvoyees.reduce((s,m) => s + (m.cout_total||0), 0))}</div>
+                  </div>
+                </>
               )}
             </div>
 
-            {!semaineId && (
-              <div className="alert alert-info mb-16">
-                💡 Sélectionnez une semaine pour calculer les sorties automatiquement depuis les ventes.
+            {semaineId && (
+              <div className="card mb-16" style={{ background:'var(--green-light)', border:'1px solid rgba(26,107,60,.2)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <div style={{ fontWeight:600, color:'var(--green)' }}>Calcul automatique des sorties</div>
+                    <div style={{ fontSize:12, color:'var(--gray-500)', marginTop:2 }}>
+                      Calcule les sorties de stock depuis les ventes SumUp de la semaine sélectionnée
+                    </div>
+                  </div>
+                  <button className="btn btn-primary" onClick={calculerSortiesAuto} disabled={calcLoading}>
+                    {calcLoading ? <span className="spinner"/> : '🔄'} Calculer les sorties depuis les ventes
+                  </button>
+                </div>
+                {sortiesNonEnvoyees.length > 0 && (
+                  <div style={{ marginTop:12, borderTop:'1px solid rgba(26,107,60,.2)', paddingTop:12, fontSize:12, color:'var(--green)' }}>
+                    💡 {sortiesNonEnvoyees.length} sortie(s) calculée(s) non encore envoyée(s) au bilan — cliquez sur <strong>→ Bilan</strong> pour chaque ligne
+                  </div>
+                )}
               </div>
             )}
 
             <div className="card">
-              <div className="card-title">État du stock — valorisation FIFO</div>
+              <div className="card-title">État du stock</div>
               {loading ? <div className="loading-page" style={{ minHeight:80 }}><div className="spinner"/></div> : (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
                         <th>Article</th>
-                        <th>Unité</th>
-                        <th className="num">Qté en stock</th>
-                        <th className="num">Coût moyen</th>
+                        <th>Méthode</th>
+                        <th className="num">Qté stock</th>
+                        <th className="num">Coût unitaire</th>
                         <th className="num">Valeur stock</th>
-                        <th>Lots FIFO</th>
+                        {!semaineId && <th>Lots</th>}
+                        {semaineId && <th>Sortie semaine</th>}
                         <th></th>
                       </tr>
                     </thead>
                     <tbody>
                       {articles.map(a => {
-                        const { qteStock, valeurStock, coutMoyen, lots } = getStockArticle(a.id)
+                        const stockData = getStockArticle(a)
                         const assocs = associations.filter(x => x.article_stock_id === a.id)
+                        const sortieSemaine = semaineId
+                          ? mouvements.find(m => m.article_stock_id === a.id && m.semaine_id === semaineId && m.type_mouvement === 'sortie')
+                          : null
+
                         return (
-                          <tr key={a.id} style={{ background: qteStock <= 0 ? 'var(--amber-light)' : '' }}>
+                          <tr key={a.id} style={{ background: stockData.qteStock <= 0 ? 'var(--amber-light)' : '' }}>
                             <td>
                               <div style={{ fontWeight:500 }}>{a.nom}</div>
                               <div style={{ fontSize:11, color:'var(--gray-400)' }}>
-                                {assocs.map(x => `${x.produit_vendu} (${x.consommation_par_vente}${x.unite})`).join(' · ')}
+                                {assocs.map(x => `${x.produit_vendu}=${x.consommation_par_vente}${x.unite}`).join(' · ')}
                               </div>
-                            </td>
-                            <td>{a.unite_stock}</td>
-                            <td className="num">
-                              <span style={{ fontWeight:700, color: qteStock <= 0 ? 'var(--red)' : qteStock < 2 ? 'var(--amber)' : 'var(--green)' }}>
-                                {qteStock}
-                              </span>
-                            </td>
-                            <td className="num">{coutMoyen ? fmt(coutMoyen) : '—'}</td>
-                            <td className="num" style={{ fontWeight:600 }}>{fmt(valeurStock)}</td>
-                            <td style={{ fontSize:11, color:'var(--gray-400)' }}>
-                              {lots.map((l, i) => (
-                                <span key={i} className="badge badge-gray" style={{ fontSize:10, marginRight:3 }}>
-                                  {l.quantite_restante.toFixed(1)} × {fmt(l.cout_unitaire)}
-                                </span>
-                              ))}
                             </td>
                             <td>
-                              <div className="flex-gap">
-                                <button className="btn btn-sm btn-primary" onClick={() => setEntreeModal(a)} title="Ajouter une entrée">
-                                  📦 Entrée
-                                </button>
-                                {semaineId && assocs.length > 0 && (
-                                  <button className="btn btn-sm" onClick={() => setSortiesModal(a)} title="Calculer sorties depuis ventes">
-                                    📊 Sorties
-                                  </button>
+                              <span className={`badge ${a.methode_valorisation === 'pump' ? 'badge-amber' : 'badge-blue'}`}>
+                                {a.methode_valorisation?.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="num">
+                              <span style={{ fontWeight:700, color: stockData.qteStock <= 0 ? 'var(--red)' : stockData.qteStock < 2 ? 'var(--amber)' : 'var(--green)' }}>
+                                {stockData.qteStock} {a.unite_stock}
+                              </span>
+                            </td>
+                            <td className="num">
+                              {a.methode_valorisation === 'pump'
+                                ? <span title="Prix unitaire moyen pondéré">{stockData.pump ? fmt(stockData.pump) : '—'}</span>
+                                : <span>{stockData.coutMoyen ? fmt(stockData.coutMoyen) : '—'}</span>}
+                            </td>
+                            <td className="num" style={{ fontWeight:600 }}>{fmt(stockData.valeurStock)}</td>
+                            {!semaineId && (
+                              <td style={{ fontSize:10, color:'var(--gray-400)' }}>
+                                {stockData.lots?.map((l, i) => (
+                                  <span key={i} className="badge badge-gray" style={{ fontSize:9, marginRight:2 }}>
+                                    {l.quantite_restante.toFixed(1)}×{fmt(l.cout_unitaire)}
+                                  </span>
+                                ))}
+                              </td>
+                            )}
+                            {semaineId && (
+                              <td>
+                                {sortieSemaine ? (
+                                  <div>
+                                    <div style={{ fontSize:12, fontWeight:600, color:'var(--red)' }}>
+                                      -{sortieSemaine.quantite} {a.unite_stock} / {fmt(sortieSemaine.cout_total)}
+                                    </div>
+                                    {sortieSemaine.envoye_bilan
+                                      ? <span className="badge badge-green" style={{ fontSize:10 }}>✅ Au bilan</span>
+                                      : <button className="btn btn-sm btn-primary" style={{ fontSize:10, marginTop:4 }}
+                                          onClick={() => setValidBilanModal(sortieSemaine)}>
+                                          → Envoyer au bilan
+                                        </button>}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted" style={{ fontSize:12 }}>Non calculé</span>
                                 )}
-                              </div>
+                              </td>
+                            )}
+                            <td>
+                              <button className="btn btn-sm btn-primary" onClick={() => setEntreeModal(a)}>📦 Entrée</button>
                             </td>
                           </tr>
                         )
@@ -503,46 +610,45 @@ export default function StockPage() {
           <div className="card">
             <div className="flex-between mb-16">
               <div className="card-title" style={{ marginBottom:0 }}>
-                Historique des mouvements
-                {semaineId && <span className="badge badge-blue" style={{ marginLeft:8 }}>Semaine filtrée</span>}
+                Historique {semaineId ? '— semaine filtrée' : '— toutes semaines'}
               </div>
-              <div className="text-sm text-muted">{mvtsFiltres.length} mouvement(s)</div>
+              <div className="text-sm text-muted">{mvtsSemaine.length} mouvement(s)</div>
             </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Article</th>
-                    <th>Type</th>
-                    <th className="num">Quantité</th>
-                    <th className="num">Prix unitaire</th>
-                    <th className="num">Total</th>
-                    <th>Notes</th>
-                    <th></th>
+                    <th>Date</th><th>Article</th><th>Type</th>
+                    <th className="num">Qté</th><th className="num">P.U.</th>
+                    <th className="num">Total</th><th>Bilan</th><th>Notes</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {mvtsFiltres.length === 0 ? (
-                    <tr><td colSpan={8} style={{ textAlign:'center', padding:32, color:'var(--gray-400)' }}>Aucun mouvement</td></tr>
+                  {mvtsSemaine.length === 0 ? (
+                    <tr><td colSpan={9} style={{ textAlign:'center', padding:32, color:'var(--gray-400)' }}>Aucun mouvement</td></tr>
                   ) : (
-                    mvtsFiltres.sort((a,b) => new Date(b.date_mouvement) - new Date(a.date_mouvement)).map(m => (
+                    [...mvtsSemaine].sort((a,b) => new Date(b.date_mouvement) - new Date(a.date_mouvement)).map(m => (
                       <tr key={m.id}>
                         <td>{m.date_mouvement}</td>
                         <td style={{ fontWeight:500 }}>{m.articles_stock?.nom}</td>
                         <td>
                           {m.type_mouvement === 'entree'
                             ? <span className="badge badge-green">📦 Entrée</span>
-                            : m.type_mouvement === 'sortie'
-                            ? <span className="badge badge-amber">📤 Sortie</span>
-                            : <span className="badge badge-gray">📋 Inventaire</span>}
+                            : <span className="badge badge-amber">📤 Sortie</span>}
                         </td>
                         <td className="num">{m.quantite} {m.articles_stock?.unite_stock}</td>
                         <td className="num">{m.cout_unitaire ? fmt(m.cout_unitaire) : '—'}</td>
                         <td className="num" style={{ fontWeight:600, color: m.type_mouvement === 'entree' ? 'var(--green)' : 'var(--red)' }}>
                           {m.type_mouvement === 'entree' ? '+' : '-'}{fmt(Math.abs(m.cout_total || 0))}
                         </td>
-                        <td style={{ fontSize:11, color:'var(--gray-400)', maxWidth:200 }}>{m.notes || '—'}</td>
+                        <td>
+                          {m.type_mouvement === 'sortie'
+                            ? m.envoye_bilan
+                              ? <span className="badge badge-green" style={{ fontSize:10 }}>✅ Envoyé</span>
+                              : <span className="badge badge-amber" style={{ fontSize:10 }}>⏳ En attente</span>
+                            : '—'}
+                        </td>
+                        <td style={{ fontSize:11, color:'var(--gray-400)', maxWidth:160 }}>{m.notes || '—'}</td>
                         <td>
                           <button className="btn btn-danger btn-sm" onClick={() => deleteMouvement(m.id)}>🗑️</button>
                         </td>
@@ -561,26 +667,32 @@ export default function StockPage() {
             {showArticleForm && (
               <div className="card mb-16">
                 <div className="card-title">{editArticleId ? 'Modifier' : 'Nouvel'} article stockable</div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 80px', gap:12, marginBottom:12 }}>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:12, marginBottom:12 }}>
                   <div className="form-group">
                     <label className="form-label">Nom *</label>
-                    <input className="form-input" value={articleForm.nom} onChange={e => setArticleForm(f=>({...f,nom:e.target.value}))}
-                      placeholder="Ex: Fût bière pression" autoFocus />
+                    <input className="form-input" value={articleForm.nom}
+                      onChange={e => setArticleForm(f=>({...f,nom:e.target.value}))} autoFocus />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Unité</label>
-                    <select className="form-select" value={articleForm.unite_stock} onChange={e => setArticleForm(f=>({...f,unite_stock:e.target.value}))}>
+                    <select className="form-select" value={articleForm.unite_stock}
+                      onChange={e => setArticleForm(f=>({...f,unite_stock:e.target.value}))}>
                       {['fût','bouteille','canette','bag-in-box','carton','pièce'].map(u => <option key={u}>{u}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Contenance (L)</label>
-                    <input className="form-input" type="number" step="0.01" value={articleForm.contenance_litres}
-                      onChange={e => setArticleForm(f=>({...f,contenance_litres:e.target.value}))} placeholder="Ex: 30" />
+                    <input className="form-input" type="number" step="0.01"
+                      value={articleForm.contenance_litres}
+                      onChange={e => setArticleForm(f=>({...f,contenance_litres:e.target.value}))} />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Ordre</label>
-                    <input className="form-input" type="number" value={articleForm.ordre} onChange={e => setArticleForm(f=>({...f,ordre:e.target.value}))} />
+                    <label className="form-label">Méthode valorisation</label>
+                    <select className="form-select" value={articleForm.methode_valorisation}
+                      onChange={e => setArticleForm(f=>({...f,methode_valorisation:e.target.value}))}>
+                      <option value="fifo">📋 FIFO (premier entré, premier sorti)</option>
+                      <option value="pump">⚖️ PUMP (coût unitaire moyen pondéré)</option>
+                    </select>
                   </div>
                 </div>
                 <div className="flex-gap">
@@ -594,7 +706,9 @@ export default function StockPage() {
               <div className="card-title">Articles stockables ({articles.length})</div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Article</th><th>Unité</th><th className="num">Contenance</th><th>Produits associés</th><th></th></tr></thead>
+                  <thead>
+                    <tr><th>Article</th><th>Unité</th><th className="num">Contenance</th><th>Méthode</th><th>Produits associés</th><th></th></tr>
+                  </thead>
                   <tbody>
                     {articles.map(a => {
                       const assocs = associations.filter(x => x.article_stock_id === a.id)
@@ -604,19 +718,24 @@ export default function StockPage() {
                           <td>{a.unite_stock}</td>
                           <td className="num">{a.contenance_litres ? `${a.contenance_litres} L` : '—'}</td>
                           <td>
+                            <span className={`badge ${a.methode_valorisation === 'pump' ? 'badge-amber' : 'badge-blue'}`}>
+                              {a.methode_valorisation?.toUpperCase()}
+                            </span>
+                          </td>
+                          <td>
                             <div style={{ display:'flex', flexWrap:'wrap', gap:3 }}>
                               {assocs.map(x => (
                                 <span key={x.id} className="badge badge-blue" style={{ fontSize:10 }}>
-                                  {x.produit_vendu} ({x.consommation_par_vente}{x.unite})
+                                  {x.produit_vendu} ({x.consommation_par_vente} {x.unite})
                                 </span>
                               ))}
-                              {assocs.length === 0 && <span className="badge badge-amber" style={{ fontSize:10 }}>⚠️ Aucune association</span>}
+                              {!assocs.length && <span className="badge badge-amber" style={{ fontSize:10 }}>⚠️ Aucune association</span>}
                             </div>
                           </td>
                           <td>
                             <div className="flex-gap">
                               <button className="btn btn-sm" onClick={() => { setArticleForm({...a}); setEditArticleId(a.id); setShowArticleForm(true) }}>✏️</button>
-                              <button className="btn btn-danger btn-sm" onClick={() => deleteArticle(a.id)}>🗑️</button>
+                              <button className="btn btn-danger btn-sm" onClick={async () => { if (!confirm('Supprimer ?')) return; await supabase.from('articles_stock').update({ actif:false }).eq('id', a.id); load() }}>🗑️</button>
                             </div>
                           </td>
                         </tr>
@@ -629,10 +748,10 @@ export default function StockPage() {
 
             <div className="card">
               <div className="card-title">Associations article → produits vendus</div>
-              <p className="text-muted text-sm mb-16">Définit combien de litres/unités sont consommés par vente d'un produit SumUp</p>
+              <p className="text-muted text-sm mb-16">Définit la consommation par vente — utilisé pour calculer automatiquement les sorties</p>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Article stock</th><th>Produit vendu (SumUp)</th><th className="num">Conso par vente</th><th>Unité</th><th>Notes</th></tr></thead>
+                  <thead><tr><th>Article stock</th><th>Produit vendu (SumUp)</th><th className="num">Conso/vente</th><th>Unité</th><th>Notes</th></tr></thead>
                   <tbody>
                     {associations.map(x => (
                       <tr key={x.id}>
