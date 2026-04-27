@@ -8,6 +8,7 @@ const NAV = [
   { to: '/import', icon: '📂', label: 'Import SumUp' },
   { to: '/achats', icon: '🛒', label: 'Saisie achats' },
   { to: '/import-achats', icon: '📥', label: 'Import achats CSV' },
+  { to: '/stock', icon: '📦', label: 'Stock boissons' },
   { to: '/dons', icon: '💝', label: 'Dons & Caritatif' },
   { to: '/historique', icon: '📅', label: 'Historique' },
   { to: '/produits', icon: '🍺', label: 'Produits' },
@@ -21,12 +22,11 @@ export default function Layout() {
     await supabase.auth.signOut()
     navigate('/login')
   }
-
   return (
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <img src={LOGO} alt="HBC La Fillière" style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 8 }} />
+          <img src={LOGO} alt="HBC La Fillière" style={{ width:80, height:80, objectFit:'contain', marginBottom:8 }} />
           <h1>HBC La Fillière</h1>
           <p>Gestion des buvettes</p>
         </div>
@@ -35,18 +35,15 @@ export default function Layout() {
             <div className="nav-section-label">Navigation</div>
             {NAV.map(({ to, icon, label }) => (
               <NavLink key={to} to={to} className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-                <span className="nav-icon">{icon}</span>
-                {label}
+                <span className="nav-icon">{icon}</span>{label}
               </NavLink>
             ))}
           </div>
         </nav>
-        <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,.15)' }}>
-          <button onClick={handleLogout} style={{
-            width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,.1)',
-            border: 'none', borderRadius: 6, color: 'rgba(255,255,255,.8)',
-            fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8
-          }}>🚪 Déconnexion</button>
+        <div style={{ padding:'12px 16px', borderTop:'1px solid rgba(255,255,255,.15)' }}>
+          <button onClick={handleLogout} style={{ width:'100%', padding:'8px 12px', background:'rgba(255,255,255,.1)', border:'none', borderRadius:6, color:'rgba(255,255,255,.8)', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:8 }}>
+            🚪 Déconnexion
+          </button>
         </div>
       </aside>
       <main className="main-content"><Outlet /></main>
