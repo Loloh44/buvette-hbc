@@ -12,6 +12,7 @@ import ProduitsPage from './pages/Produits.jsx'
 import SemainesPage from './pages/Semaines.jsx'
 import DonsPage from './pages/Dons.jsx'
 import ReferentielPage from './pages/Referentiel.jsx'
+import StockPage from './pages/Stock.jsx'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="historique" element={<HistoriquePage />} />
           <Route path="produits" element={<ProduitsPage />} />
           <Route path="referentiel" element={<ReferentielPage />} />
+          <Route path="stock" element={<StockPage />} />
           <Route path="semaines" element={<SemainesPage />} />
         </Route>
       </Routes>
