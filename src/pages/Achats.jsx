@@ -5,7 +5,8 @@ import SemaineSelector from '../components/SemaineSelector.jsx'
 
 const EMPTY_ACHAT = {
   fournisseur: '', num_facture: '', date_achat: new Date().toISOString().slice(0, 10),
-  article: '', quantite: '', unite: '', total_ht: '', taux_tva: 0.055, total_ttc: ''
+  article: '', quantite: '', unite: '', total_ht: '', taux_tva: 0.055, total_ttc: '',
+  article_stock_id: '', quantite_stock: '', unite_stock: ''
 }
 
 // ─── Modal Répartition Automatique ────────────────────────────────────────────
@@ -349,9 +350,15 @@ export default function AchatsPage() {
   const [editId, setEditId] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [repartitionModal, setRepartitionModal] = useState(null)
+  const [articlesStock, setArticlesStock] = useState([])
 
-  useEffect(() => { loadProduits() }, [])
+  useEffect(() => { loadProduits(); loadArticlesStock() }, [])
   useEffect(() => { if (semaineId) loadAchats() }, [semaineId])
+
+  async function loadArticlesStock() {
+    const { data } = await supabase.from('articles_stock').select('id, nom, unite_stock').eq('actif', true).order('ordre')
+    setArticlesStock(data || [])
+  }
 
   async function loadProduits() {
     const { data } = await supabase.from('produits').select('nom, categorie').eq('actif', true).order('categorie').order('nom')
@@ -391,10 +398,37 @@ export default function AchatsPage() {
         total_ht: form.total_ht ? parseFloat(form.total_ht) : null,
         taux_tva: parseFloat(form.taux_tva),
         total_ttc: parseFloat(form.total_ttc),
+        article_stock_id: form.article_stock_id || null,
+        quantite_stock: form.quantite_stock ? parseFloat(form.quantite_stock) : null,
+        unite_stock: form.unite_stock || null,
       }
       if (editId) await supabase.from('achats').update(payload).eq('id', editId)
       else await supabase.from('achats').insert(payload)
       setAlert({ type: 'success', msg: editId ? 'Achat mis à jour' : 'Achat ajouté' })
+
+      // Créer entrée stock si article stock lié
+      if (form.article_stock_id && form.quantite_stock && parseFloat(form.quantite_stock) > 0) {
+        const ttc = parseFloat(form.total_ttc) || 0
+        const qteStock = parseFloat(form.quantite_stock)
+        const coutUnitaire = qteStock > 0 ? ttc / qteStock : 0
+        // Supprimer entrée existante pour cet achat si mise à jour
+        if (editId) {
+          await supabase.from('mouvements_stock').delete().eq('achat_id', editId)
+        }
+        const achatId = editId || null
+        await supabase.from('mouvements_stock').insert({
+          article_stock_id: form.article_stock_id,
+          semaine_id: semaineId,
+          achat_id: achatId,
+          type_mouvement: 'entree',
+          quantite: qteStock,
+          cout_unitaire: Math.round(coutUnitaire * 10000) / 10000,
+          cout_total: ttc,
+          date_mouvement: form.date_achat || new Date().toISOString().slice(0, 10),
+          notes: `Depuis achat : ${form.article} (${form.fournisseur})`,
+        })
+      }
+
       setForm(EMPTY_ACHAT); setEditId(null); setShowForm(false)
       loadAchats()
     } catch (e) { setAlert({ type: 'error', msg: e.message }) }
@@ -408,7 +442,13 @@ export default function AchatsPage() {
   }
 
   function startEdit(a) {
-    setForm({ ...a, date_achat: a.date_achat || '' })
+    setForm({
+      ...a,
+      date_achat: a.date_achat || '',
+      article_stock_id: a.article_stock_id || '',
+      quantite_stock: a.quantite_stock || '',
+      unite_stock: a.unite_stock || '',
+    })
     setEditId(a.id); setShowForm(true)
   }
 
@@ -494,6 +534,49 @@ export default function AchatsPage() {
               <div className="form-group" style={{ gridColumn: '1/-1' }}>
                 <label className="form-label">Total TTC (€) *</label>
                 <input className="form-input" type="number" step="0.01" value={form.total_ttc} onChange={e => setForm(f => ({ ...f, total_ttc: e.target.value }))} style={{ maxWidth: 200 }} />
+              </div>
+
+              {/* Lien stock optionnel */}
+              <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                <div style={{ background:'var(--gray-50)', border:'1px solid var(--gray-200)', borderRadius:8, padding:12 }}>
+                  <div style={{ fontWeight:600, fontSize:12, marginBottom:8, color:'var(--gray-500)' }}>
+                    📦 Lien stock (optionnel) — si cet achat alimente le stock boissons
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr', gap:10 }}>
+                    <div className="form-group">
+                      <label className="form-label">Article stockable</label>
+                      <select className="form-select" value={form.article_stock_id}
+                        onChange={e => {
+                          const art = articlesStock.find(a => a.id === e.target.value)
+                          setForm(f => ({ ...f, article_stock_id: e.target.value, unite_stock: art?.unite_stock || '' }))
+                        }}>
+                        <option value="">— Aucun (pas en stock) —</option>
+                        {articlesStock.map(a => <option key={a.id} value={a.id}>{a.nom} ({a.unite_stock})</option>)}
+                      </select>
+                    </div>
+                    {form.article_stock_id && (
+                      <>
+                        <div className="form-group">
+                          <label className="form-label">Quantité en stock</label>
+                          <input className="form-input" type="number" step="0.01" min="0"
+                            value={form.quantite_stock}
+                            onChange={e => setForm(f => ({ ...f, quantite_stock: e.target.value }))}
+                            placeholder="Ex: 60" />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Unité</label>
+                          <input className="form-input" value={form.unite_stock} readOnly
+                            style={{ background:'var(--gray-100)', color:'var(--gray-400)' }} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {form.article_stock_id && form.quantite_stock && parseFloat(form.total_ttc) > 0 && (
+                    <div style={{ fontSize:12, color:'var(--green)', marginTop:6, fontWeight:500 }}>
+                      → Coût unitaire : {new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(parseFloat(form.total_ttc)/parseFloat(form.quantite_stock))} / {form.unite_stock}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex-gap mt-16">
