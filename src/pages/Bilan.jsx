@@ -106,12 +106,23 @@ export default function BilanPage() {
       catStats[c].nb++
       catStats[c].ca += v.prix_ttc || 0
     })
+    // Charges catégories = achats directs imputés + sorties stock validées
     if (achats) {
-      achats.forEach(a => a.imputations?.forEach(imp => {
-        const cat = imp.categorie || 'Inconnu'
-        if (!catStats[cat]) catStats[cat] = { nb: 0, ca: 0, achat: 0 }
-        catStats[cat].achat += imp.cout_total_categorie || 0
-      }))
+      achats.filter(a => !a.article_stock_id && a.fournisseur !== 'Stock').forEach(a =>
+        a.imputations?.forEach(imp => {
+          const cat = imp.categorie || 'Inconnu'
+          if (!catStats[cat]) catStats[cat] = { nb: 0, ca: 0, achat: 0 }
+          catStats[cat].achat += imp.cout_total_categorie || 0
+        })
+      )
+    }
+    // Ajouter les sorties stock validées dans la catégorie Boissons
+    if (mvtsStock) {
+      const sortiesVal = mvtsStock.filter(m => m.type_mouvement === 'sortie' && m.envoye_bilan)
+      sortiesVal.forEach(m => {
+        if (!catStats['Boissons']) catStats['Boissons'] = { nb: 0, ca: 0, achat: 0 }
+        catStats['Boissons'].achat += m.cout_total || 0
+      })
     }
 
     const paiements = {}
@@ -123,10 +134,11 @@ export default function BilanPage() {
     })
 
     const totalCA = ventesOnly.reduce((s, v) => s + (v.prix_ttc || 0), 0)
-    // Achats directs = ceux NON liés au stock (les stock-linked passent par les sorties)
-    const achatsDirects = (achats || []).filter(a => !a.article_stock_id)
+    // Achats directs = ceux NON liés au stock ET non générés par une sortie stock
+    // On exclut aussi fournisseur='Stock' car ce sont les lignes créées par les sorties stock (déjà comptées)
+    const achatsDirects = (achats || []).filter(a => !a.article_stock_id && a.fournisseur !== 'Stock')
     const totalAchats = achatsDirects.reduce((s, a) => s + (a.total_ttc || 0), 0)
-    // Sorties stock validées (envoyées au bilan)
+    // Sorties stock validées (envoyées au bilan) — seule source de vérité pour les coûts stock
     const sortiesStock = (mvtsStock || []).filter(m => m.type_mouvement === 'sortie' && m.envoye_bilan)
     const totalSortiesStock = sortiesStock.reduce((s, m) => s + (m.cout_total || 0), 0)
     const totalDons = (dons || []).reduce((s, d) => s + (d.montant_calcule || 0), 0)
@@ -140,10 +152,26 @@ export default function BilanPage() {
       byProduit[key].qte += v.quantite || 0
       byProduit[key].ca += v.prix_ttc || 0
     })
+    // Coûts depuis imputations des achats directs
     if (achats) {
-      achats.forEach(a => a.imputations?.forEach(imp => {
-        if (byProduit[imp.produit_fini]) byProduit[imp.produit_fini].cout += imp.cout_total_categorie || 0
-      }))
+      achats.filter(a => !a.article_stock_id && a.fournisseur !== 'Stock').forEach(a =>
+        a.imputations?.forEach(imp => {
+          if (byProduit[imp.produit_fini]) byProduit[imp.produit_fini].cout += imp.cout_total_categorie || 0
+        })
+      )
+    }
+    // Coûts depuis sorties stock validées — répartis proportionnellement au CA des produits associés
+    if (mvtsStock) {
+      const sortiesValidees = mvtsStock.filter(m => m.type_mouvement === 'sortie' && m.envoye_bilan)
+      sortiesValidees.forEach(sortie => {
+        // Trouver les produits liés à cet article stock via les imputations de l'achat généré
+        const achatStock = (achats || []).find(a => a.fournisseur === 'Stock' && a.semaine_id === semaineId)
+        if (achatStock?.imputations?.length) {
+          achatStock.imputations.forEach(imp => {
+            if (byProduit[imp.produit_fini]) byProduit[imp.produit_fini].cout += imp.cout_total_categorie || 0
+          })
+        }
+      })
     }
     const produitsArr = Object.values(byProduit).map(p => ({
       ...p, marge: p.ca - p.cout, margePct: p.ca > 0 ? (p.ca - p.cout) / p.ca : 0,

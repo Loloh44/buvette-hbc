@@ -37,6 +37,7 @@ export default function DonsPage() {
   const [produits, setProduits] = useState([])
   const [ventesData, setVentesData] = useState(null)
   const [achatsData, setAchatsData] = useState(null)
+  const [sortiesStockData, setSortiesStockData] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_DON)
   const [editId, setEditId] = useState(null)
@@ -67,11 +68,19 @@ export default function DonsPage() {
 
     const { data: achats } = await supabase
       .from('achats')
-      .select('total_ttc, imputations(produit_fini, categorie, cout_total_categorie)')
+      .select('total_ttc, article_stock_id, fournisseur, imputations(produit_fini, categorie, cout_total_categorie)')
       .eq('semaine_id', semaineId)
+
+    const { data: mvtsStock } = await supabase
+      .from('mouvements_stock')
+      .select('cout_total, article_stock_id, articles_stock(categorie)')
+      .eq('semaine_id', semaineId)
+      .eq('type_mouvement', 'sortie')
+      .eq('envoye_bilan', true)
 
     setVentesData(ventes || [])
     setAchatsData(achats || [])
+    setSortiesStockData(mvtsStock || [])
   }
 
   async function loadDons() {
@@ -86,7 +95,7 @@ export default function DonsPage() {
   }
 
   // ── Calcul du montant du don selon les paramètres ──────────────────────────
-  function calculerDon(f, ventes, achats) {
+  function calculerDon(f, ventes, achats, sortiesStock) {
     if (!ventes || !achats) return { base: 0, montant: 0 }
     const taux = parseFloat(f.taux) || 0
 
@@ -100,9 +109,9 @@ export default function DonsPage() {
 
     const ca = ventesFiltered.reduce((s, v) => s + (v.prix_ttc || 0), 0)
 
-    // Calcul des achats imputés sur ce périmètre
+    // Calcul des achats imputés sur ce périmètre (hors stock — ceux-ci viennent des sorties)
     let coutAchats = 0
-    achats.forEach(a => {
+    ;(achats || []).filter(a => !a.article_stock_id && a.fournisseur !== 'Stock').forEach(a => {
       a.imputations?.forEach(imp => {
         if (f.perimetre === 'total') {
           coutAchats += imp.cout_total_categorie || 0
@@ -112,6 +121,18 @@ export default function DonsPage() {
           coutAchats += imp.cout_total_categorie || 0
         }
       })
+    })
+
+    // Ajouter les sorties stock validées (coût réel des boissons consommées)
+    const sortiesStock = sortiesStock || []
+    sortiesStock.forEach(m => {
+      const catStock = m.articles_stock?.categorie || 'Boissons'
+      if (f.perimetre === 'total') {
+        coutAchats += m.cout_total || 0
+      } else if (f.perimetre === 'categorie' && catStock === f.categorie) {
+        coutAchats += m.cout_total || 0
+      }
+      // Note: pour périmètre 'produits', les sorties stock ne peuvent pas être imputées à un produit spécifique
     })
 
     const marge = ca - coutAchats
@@ -135,7 +156,7 @@ export default function DonsPage() {
   // Mise à jour preview en temps réel
   useEffect(() => {
     if (ventesData && achatsData && form.taux) {
-      const result = calculerDon(form, ventesData, achatsData)
+      const result = calculerDon(form, ventesData, achatsData, sortiesStockData)
       setPreview(result)
     } else {
       setPreview(null)
@@ -148,7 +169,7 @@ export default function DonsPage() {
     if (!form.taux) return setAlert({ type: 'error', msg: 'Taux/montant requis' })
 
     setSaving(true); setAlert(null)
-    const { base, montant } = calculerDon(form, ventesData, achatsData)
+    const { base, montant } = calculerDon(form, ventesData, achatsData, sortiesStockData)
 
     const payload = {
       semaine_id: semaineId,
