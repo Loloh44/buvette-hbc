@@ -160,18 +160,37 @@ export default function BilanPage() {
         })
       )
     }
-    // Coûts depuis sorties stock validées — répartis proportionnellement au CA des produits associés
+    // Coûts depuis sorties stock validées — répartis proportionnellement aux litres/unités consommés par produit
     if (mvtsStock) {
       const sortiesValidees = mvtsStock.filter(m => m.type_mouvement === 'sortie' && m.envoye_bilan)
-      sortiesValidees.forEach(sortie => {
-        // Trouver les produits liés à cet article stock via les imputations de l'achat généré
-        const achatStock = (achats || []).find(a => a.fournisseur === 'Stock' && a.semaine_id === semaineId)
-        if (achatStock?.imputations?.length) {
-          achatStock.imputations.forEach(imp => {
-            if (byProduit[imp.produit_fini]) byProduit[imp.produit_fini].cout += imp.cout_total_categorie || 0
+      for (const sortie of sortiesValidees) {
+        // Charger les associations de cet article stock
+        const { data: assocs } = await supabase
+          .from('stock_associations')
+          .select('produit_vendu, consommation_par_vente, unite')
+          .eq('article_stock_id', sortie.article_stock_id)
+        if (!assocs?.length) continue
+
+        // Calculer les litres/unités consommés par produit vendu
+        let totalConso = 0
+        const consoParProduit = {}
+        assocs.forEach(assoc => {
+          const prod = byProduit[assoc.produit_vendu]
+          if (!prod) return
+          const conso = prod.qte * assoc.consommation_par_vente
+          consoParProduit[assoc.produit_vendu] = conso
+          totalConso += conso
+        })
+
+        // Répartir le coût de la sortie proportionnellement
+        if (totalConso > 0) {
+          Object.entries(consoParProduit).forEach(([produit, conso]) => {
+            if (byProduit[produit]) {
+              byProduit[produit].cout += Math.round((conso / totalConso) * (sortie.cout_total || 0) * 100) / 100
+            }
           })
         }
-      })
+      }
     }
     const produitsArr = Object.values(byProduit).map(p => ({
       ...p, marge: p.ca - p.cout, margePct: p.ca > 0 ? (p.ca - p.cout) / p.ca : 0,
