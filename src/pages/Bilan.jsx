@@ -87,10 +87,11 @@ export default function BilanPage() {
     const { data: sem } = await supabase.from('semaines').select('*').eq('id', semaineId).single()
     setSemaine(sem)
 
-    const [{ data: ventes }, { data: achats }, { data: dons }] = await Promise.all([
+    const [{ data: ventes }, { data: achats }, { data: dons }, { data: mvtsStock }] = await Promise.all([
       supabase.from('ventes').select('prix_ttc, moyen_paiement, categorie, description, quantite, type_transaction').eq('semaine_id', semaineId),
       supabase.from('achats').select('*, imputations(*)').eq('semaine_id', semaineId),
       supabase.from('dons').select('*').eq('semaine_id', semaineId).neq('statut', 'annule'),
+      supabase.from('mouvements_stock').select('*, articles_stock(nom, unite_stock)').eq('semaine_id', semaineId),
     ])
 
     if (!ventes) { setLoading(false); return }
@@ -122,9 +123,14 @@ export default function BilanPage() {
     })
 
     const totalCA = ventesOnly.reduce((s, v) => s + (v.prix_ttc || 0), 0)
-    const totalAchats = (achats || []).reduce((s, a) => s + (a.total_ttc || 0), 0)
+    // Achats directs = ceux NON liés au stock (les stock-linked passent par les sorties)
+    const achatsDirects = (achats || []).filter(a => !a.article_stock_id)
+    const totalAchats = achatsDirects.reduce((s, a) => s + (a.total_ttc || 0), 0)
+    // Sorties stock validées (envoyées au bilan)
+    const sortiesStock = (mvtsStock || []).filter(m => m.type_mouvement === 'sortie' && m.envoye_bilan)
+    const totalSortiesStock = sortiesStock.reduce((s, m) => s + (m.cout_total || 0), 0)
     const totalDons = (dons || []).reduce((s, d) => s + (d.montant_calcule || 0), 0)
-    const marge = totalCA - totalAchats - totalDons
+    const marge = totalCA - totalAchats - totalSortiesStock - totalDons
     const especes = paiements['Espèces']?.montant || 0
 
     const byProduit = {}
@@ -145,8 +151,8 @@ export default function BilanPage() {
     setProduitsData(produitsArr)
 
     setBilan({
-      catStats, paiements, totalCA, totalAchats, totalDons, marge,
-      especes, achats: achats || [], dons: dons || [],
+      catStats, paiements, totalCA, totalAchats, totalSortiesStock, totalDons, marge,
+      especes, achats: achatsDirects, achatsStock: (achats||[]).filter(a=>a.article_stock_id), dons: dons || [], mvtsStock: mvtsStock || [],
       caisseDiff: (sem?.caisse_fin || 0) - (sem?.caisse_debut || 0)
     })
     setLoading(false)
@@ -397,8 +403,8 @@ export default function BilanPage() {
             <div className="metrics-grid">
               <div className="metric-card green"><div className="metric-label">CA total</div><div className="metric-value">{fmt(bilan.totalCA)}</div></div>
               <div className="metric-card red">
-                <div className="metric-label">Achats + Dons</div>
-                <div className="metric-value">{fmt(bilan.totalAchats + bilan.totalDons)}</div>
+                <div className="metric-label">Charges totales</div>
+                <div className="metric-value">{fmt(bilan.totalAchats + bilan.totalSortiesStock + bilan.totalDons)}</div>
               </div>
               <div className="metric-card" style={{ borderLeft:'3px solid var(--green)' }}>
                 <div className="metric-label">Marge nette</div>
@@ -537,10 +543,79 @@ export default function BilanPage() {
               </div>
             )}
 
+            {/* Section Stock */}
+            {bilan.mvtsStock?.length > 0 && (
+              <div className="card mt-16">
+                <div className="card-title">📦 Mouvements de stock</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Article</th>
+                      <th className="num">Entrées</th>
+                      <th className="num">Sorties</th>
+                      <th className="num">Valeur consommée</th>
+                      <th>Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      // Grouper par article
+                      const byArticle = {}
+                      bilan.mvtsStock.forEach(m => {
+                        const key = m.article_stock_id
+                        if (!byArticle[key]) byArticle[key] = { nom: m.articles_stock?.nom, unite: m.articles_stock?.unite_stock, entrees: 0, sorties: 0, coutEntrees: 0, coutSorties: 0, envoye: false }
+                        if (m.type_mouvement === 'entree') { byArticle[key].entrees += m.quantite; byArticle[key].coutEntrees += m.cout_total || 0 }
+                        if (m.type_mouvement === 'sortie') { byArticle[key].sorties += m.quantite; byArticle[key].coutSorties += m.cout_total || 0; byArticle[key].envoye = m.envoye_bilan }
+                      })
+                      return Object.values(byArticle).map((a, i) => (
+                        <tr key={i}>
+                          <td style={{ fontWeight:500 }}>{a.nom}</td>
+                          <td className="num positive">{a.entrees > 0 ? `+${a.entrees} ${a.unite}` : '—'}</td>
+                          <td className="num negative">{a.sorties > 0 ? `-${Math.round(a.sorties*100)/100} ${a.unite}` : '—'}</td>
+                          <td className="num" style={{ fontWeight:600, color: a.coutSorties > 0 ? 'var(--red)' : 'var(--gray-300)' }}>
+                            {a.coutSorties > 0 ? fmt(-a.coutSorties) : '—'}
+                          </td>
+                          <td>
+                            {a.sorties > 0
+                              ? a.envoye
+                                ? <span className="badge badge-green">✅ Au bilan</span>
+                                : <span className="badge badge-amber">⏳ En attente</span>
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))
+                    })()}
+                    {bilan.totalSortiesStock > 0 && (
+                      <tr className="tr-total">
+                        <td colSpan={3}>Total sorties valorisées</td>
+                        <td className="num negative">{fmt(-bilan.totalSortiesStock)}</td>
+                        <td></td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                {bilan.mvtsStock.some(m => m.type_mouvement === 'sortie' && !m.envoye_bilan) && (
+                  <div className="alert alert-warning mt-8">
+                    ⚠️ Des sorties de stock ne sont pas encore envoyées au bilan — allez dans <strong>📦 Stock</strong> pour les valider.
+                  </div>
+                )}
+                {bilan.achatsStock?.length > 0 && (
+                  <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid var(--gray-100)' }}>
+                    <div style={{ fontSize:12, fontWeight:600, color:'var(--gray-400)', marginBottom:6 }}>Factures en stock (non imputées directement)</div>
+                    {bilan.achatsStock.map(a => (
+                      <div key={a.id} style={{ fontSize:12, color:'var(--gray-500)', marginBottom:2 }}>
+                        📄 {a.fournisseur} — {a.article} — {fmt(a.total_ttc)} → en stock
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Achats avec réaffectation */}
             <div className="card mt-16">
-              <div className="card-title">Détail des achats</div>
-              {bilan.achats.length === 0 ? <p className="text-muted text-sm">Aucun achat saisi</p> : (
+              <div className="card-title">Détail des achats directs</div>
+              {(!bilan.achats || bilan.achats.length === 0) ? <p className="text-muted text-sm">Aucun achat direct saisi</p> : (
                 <table>
                   <thead>
                     <tr><th>Date</th><th>Fournisseur</th><th>N° Facture</th><th>Article</th><th className="num">TTC</th><th>Imputations</th><th></th></tr>

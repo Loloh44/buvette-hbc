@@ -508,7 +508,7 @@ export default function StockPage() {
 
         {/* Onglets */}
         <div style={{ display:'flex', gap:4, borderBottom:'0.5px solid var(--gray-200)', marginBottom:20 }}>
-          {[['stock','📊 Stock actuel'], ['mouvements','📋 Mouvements'], ['articles','⚙️ Articles']].map(([key, label]) => (
+          {[['stock','📊 Stock actuel'], ['historique','📅 Historique saison'], ['mouvements','📋 Mouvements'], ['articles','⚙️ Articles']].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)} style={{
               padding:'8px 16px', border:'none', background:'none', cursor:'pointer', fontSize:13, fontWeight:500,
               borderBottom: tab===key ? '2px solid var(--green)' : '2px solid transparent',
@@ -652,6 +652,112 @@ export default function StockPage() {
               )}
             </div>
           </>
+        )}
+
+        {/* ── HISTORIQUE SAISON ── */}
+        {tab === 'historique' && (
+          <div>
+            {articles.map(article => {
+              const mvtsArticle = mouvements
+                .filter(m => m.article_stock_id === article.id)
+                .sort((a, b) => new Date(a.date_mouvement) - new Date(b.date_mouvement))
+
+              if (!mvtsArticle.length) return null
+
+              // Grouper par semaine
+              const parSemaine = {}
+              mvtsArticle.forEach(m => {
+                const sid = m.semaine_id || 'hors-semaine'
+                if (!parSemaine[sid]) parSemaine[sid] = { semaine_id: sid, entrees: 0, sorties: 0, coutEntrees: 0, coutSorties: 0, envoye: false }
+                if (m.type_mouvement === 'entree') { parSemaine[sid].entrees += m.quantite; parSemaine[sid].coutEntrees += m.cout_total || 0 }
+                if (m.type_mouvement === 'sortie') { parSemaine[sid].sorties += m.quantite; parSemaine[sid].coutSorties += m.cout_total || 0; parSemaine[sid].envoye = m.envoye_bilan }
+              })
+
+              // Calcul stock cumulé semaine par semaine
+              let stockCumul = 0
+              const rows = []
+              const semOrdered = [...new Set(mvtsArticle.map(m => m.semaine_id))].filter(Boolean)
+              semOrdered.forEach(sid => {
+                const d = parSemaine[sid]
+                const sem = semaines.find(s => s.id === sid)
+                const stockDebut = stockCumul
+                stockCumul += d.entrees - d.sorties
+                rows.push({ ...d, sem, stockDebut, stockFin: Math.round(stockCumul * 1000) / 1000 })
+              })
+
+              // Stock actuel total
+              const stockData = getStockArticle(article)
+
+              return (
+                <div key={article.id} className="card mb-16">
+                  <div className="flex-between mb-16">
+                    <div>
+                      <div className="card-title" style={{ marginBottom:2 }}>{article.nom}</div>
+                      <div style={{ fontSize:12, color:'var(--gray-400)' }}>
+                        <span className={`badge ${article.methode_valorisation === 'pump' ? 'badge-amber' : 'badge-blue'}`} style={{ fontSize:10 }}>
+                          {article.methode_valorisation?.toUpperCase()}
+                        </span>
+                        {' '}Stock actuel : <strong style={{ color: stockData.qteStock <= 0 ? 'var(--red)' : 'var(--green)' }}>
+                          {stockData.qteStock} {article.unite_stock}
+                        </strong> — Valeur : <strong>{fmt(stockData.valeurStock)}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Semaine</th>
+                          <th className="num">Stock début</th>
+                          <th className="num">Entrées</th>
+                          <th className="num">Sorties</th>
+                          <th className="num">Stock fin</th>
+                          <th className="num">Coût entrées</th>
+                          <th className="num">Coût sorties</th>
+                          <th>Bilan</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={i}>
+                            <td style={{ fontWeight:500 }}>
+                              {r.sem ? `S${r.sem.numero} ${r.sem.annee}${r.sem.theme ? ` — ${r.sem.theme}` : ''}` : 'Hors semaine'}
+                            </td>
+                            <td className="num">{r.stockDebut} {article.unite_stock}</td>
+                            <td className="num positive">{r.entrees > 0 ? `+${Math.round(r.entrees*100)/100}` : '—'}</td>
+                            <td className="num negative">{r.sorties > 0 ? `-${Math.round(r.sorties*100)/100}` : '—'}</td>
+                            <td className="num" style={{ fontWeight:700, color: r.stockFin <= 0 ? 'var(--red)' : r.stockFin < 5 ? 'var(--amber)' : 'inherit' }}>
+                              {r.stockFin} {article.unite_stock}
+                            </td>
+                            <td className="num">{r.coutEntrees > 0 ? fmt(r.coutEntrees) : '—'}</td>
+                            <td className="num negative">{r.coutSorties > 0 ? fmt(-r.coutSorties) : '—'}</td>
+                            <td>
+                              {r.sorties > 0
+                                ? r.envoye
+                                  ? <span className="badge badge-green" style={{ fontSize:10 }}>✅ Envoyé</span>
+                                  : <span className="badge badge-amber" style={{ fontSize:10 }}>⏳ En attente</span>
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="tr-total">
+                          <td>Total saison</td>
+                          <td>—</td>
+                          <td className="num positive">+{Math.round(rows.reduce((s,r) => s+r.entrees, 0)*100)/100} {article.unite_stock}</td>
+                          <td className="num negative">-{Math.round(rows.reduce((s,r) => s+r.sorties, 0)*100)/100} {article.unite_stock}</td>
+                          <td className="num" style={{ fontWeight:700 }}>{stockData.qteStock} {article.unite_stock}</td>
+                          <td className="num">{fmt(rows.reduce((s,r) => s+r.coutEntrees, 0))}</td>
+                          <td className="num negative">{fmt(-rows.reduce((s,r) => s+r.coutSorties, 0))}</td>
+                          <td></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         )}
 
         {/* ── MOUVEMENTS ── */}

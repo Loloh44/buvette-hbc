@@ -453,7 +453,7 @@ export default function AchatsPage() {
   }
 
   const totalAchats = achats.reduce((s, a) => s + (a.total_ttc || 0), 0)
-  const nonImputés = achats.filter(a => !a.imputations?.length).length
+  const nonImputés = achats.filter(a => !a.article_stock_id && !a.imputations?.length).length
 
   return (
     <div>
@@ -644,13 +644,19 @@ export default function AchatsPage() {
                       </td>
                       <td>
                         <div className="flex-gap">
-                          <button
-                            className="btn btn-sm btn-primary"
-                            onClick={() => setRepartitionModal(a)}
-                            title="Répartir entre produits"
-                          >
-                            ⚖️ Répartir
-                          </button>
+                          {a.article_stock_id ? (
+                            <span className="badge badge-blue" style={{ fontSize:10 }} title="Géré par le stock — entrée créée automatiquement">
+                              📦 En stock
+                            </span>
+                          ) : (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              onClick={() => setRepartitionModal(a)}
+                              title="Répartir entre produits"
+                            >
+                              ⚖️ Répartir
+                            </button>
+                          )}
                           <button className="btn btn-sm" onClick={() => startEdit(a)}>✏️</button>
                           <button className="btn btn-danger btn-sm" onClick={() => handleDelete(a.id)}>🗑️</button>
                         </div>
