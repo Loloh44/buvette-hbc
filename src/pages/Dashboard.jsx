@@ -208,34 +208,36 @@ export default function Dashboard() {
 
         {/* Évolution saison */}
         {evolution.length > 1 && (
-          <div className="card mt-16">
-            <div className="card-title">CA & Marge hebdomadaires — saison {semaine.annee}</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                <XAxis dataKey="name" tick={{ fontSize:11 }} />
-                <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
-                <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
-                <Legend />
-                <Bar dataKey="ca" name="CA" fill="#6B3FA0" radius={[4,4,0,0]} />
-                <Bar dataKey="marge" name="Marge" fill="#1A6B3C" radius={[4,4,0,0]} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="card mt-16">
-            <div className="card-title">CA cumulé & Marge cumulée — saison {semaine.annee}</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                <XAxis dataKey="name" tick={{ fontSize:11 }} />
-                <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
-                <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
-                <Legend />
-                <Area type="monotone" dataKey="caCumul" name="CA cumulé" fill="#ede7f6" stroke="#6B3FA0" strokeWidth={2} />
-                <Area type="monotone" dataKey="margeCumul" name="Marge cumulée" fill="#e8f5ee" stroke="#1A6B3C" strokeWidth={2} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+          <>
+            <div className="card mt-16">
+              <div className="card-title">CA & Marge hebdomadaires — saison {semaine.annee}</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
+                  <XAxis dataKey="name" tick={{ fontSize:11 }} />
+                  <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
+                  <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
+                  <Legend />
+                  <Bar dataKey="ca" name="CA" fill="#6B3FA0" radius={[4,4,0,0]} />
+                  <Bar dataKey="marge" name="Marge" fill="#1A6B3C" radius={[4,4,0,0]} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="card mt-16">
+              <div className="card-title">CA cumulé & Marge cumulée — saison {semaine.annee}</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
+                  <XAxis dataKey="name" tick={{ fontSize:11 }} />
+                  <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
+                  <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
+                  <Legend />
+                  <Area type="monotone" dataKey="caCumul" name="CA cumulé" fill="#ede7f6" stroke="#6B3FA0" strokeWidth={2} />
+                  <Area type="monotone" dataKey="margeCumul" name="Marge cumulée" fill="#e8f5ee" stroke="#1A6B3C" strokeWidth={2} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         )}
       </div>
     </div>
