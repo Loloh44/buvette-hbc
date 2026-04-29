@@ -321,10 +321,20 @@ export default function HistoriquePage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )})
+                    }
                     <tr className="tr-total">
                       <td colSpan={4}>Total {getSaisonLabel(saison)}</td>
                       <td className="num">{fmt(totalSaison)}</td>
+                      <td className="num">{fmt(achatsData.reduce((s, a) => semaines.some(x => x.semaine_id === a.semaine_id) ? s + (a.total_ttc||0) : s, 0))}</td>
+                      <td className="num" style={{ fontWeight:700, color:'var(--green)' }}>
+                        {fmt(semaines.reduce((s, sem) => {
+                          const a = achatsData.filter(x => x.semaine_id === sem.semaine_id).reduce((t,x) => t+(x.total_ttc||0), 0)
+                          const d = donsData.filter(x => x.semaine_id === sem.semaine_id).reduce((t,x) => t+(x.montant_calcule||0), 0)
+                          return s + (sem.ca_total||0) - a - d - (sem.ca_cb||0)*0.0175
+                        }, 0))}
+                      </td>
+                      <td className="num">{fmt(donsData.reduce((s, d) => semaines.some(x => x.semaine_id === d.semaine_id) ? s + (d.montant_calcule||0) : s, 0))}</td>
                       <td className="num">{fmt(semaines.reduce((s, sem) => s + sem.ca_especes, 0))}</td>
                       <td className="num">{fmt(semaines.reduce((s, sem) => s + sem.ca_cb, 0))}</td>
                       <td></td>
