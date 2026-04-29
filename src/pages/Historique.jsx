@@ -162,11 +162,12 @@ export default function HistoriquePage() {
   const cats = ['Boissons', 'Snacking', 'Boutique', 'Dons', 'Inconnu']
 
   const semainesEnrichies = semaines.map(s => {
+    // achatsDirects inclut déjà la ligne fournisseur='SumUp' générée par le bouton bilan
+    // donc pas besoin de recalculer les frais SumUp séparément
     const achatsDirects = achatsData.filter(x => x.semaine_id === s.semaine_id && !x.article_stock_id && x.fournisseur !== 'Stock').reduce((t,x) => t+(x.total_ttc||0), 0)
     const sortiesStock = sortiesStockData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.cout_total||0), 0)
     const dons = donsData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.montant_calcule||0), 0)
-    const frais = (s.ca_cb || 0) * 0.0175
-    const marge = (s.ca_total||0) - achatsDirects - sortiesStock - dons - frais
+    const marge = (s.ca_total||0) - achatsDirects - sortiesStock - dons
     const sortKey = (s.annee || 0) * 100 + (s.numero || 0)
     return { ...s, achats: achatsDirects + sortiesStock, dons, marge, sortKey }
   })
