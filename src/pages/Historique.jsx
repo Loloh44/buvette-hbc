@@ -345,6 +345,7 @@ export default function HistoriquePage() {
                     </tr>
                   </thead>
                   <tbody>
+                    <>
                     {sortedSemaines.map(s => (
                       <tr key={s.semaine_id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                         <td style={{ whiteSpace:'nowrap', fontWeight:700, color:'var(--green)' }}>{formatSemaine(s.annee, s.numero)}</td>
@@ -360,15 +361,17 @@ export default function HistoriquePage() {
                         <td style={{ textAlign:'right', fontWeight:700, color: s.marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(s.marge)}</td>
                         <td style={{ textAlign:'right', color:'var(--green)', fontSize:12 }}>{s.dons > 0 ? fmt(s.dons) : '—'}</td>
                         <td>
-                          <div className="flex-gap no-print">
-                            <button className="btn btn-sm btn-primary" onClick={() => navigate('/bilan', { state: { semaineId: s.semaine_id } })}>📋</button>
+                          <div className="flex-gap">
+                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/bilan?s=${s.semaine_id}`)}>
+                              📋 Bilan
+                            </button>
                             <button className="btn btn-sm" onClick={() => setEditModal(s)}>✏️</button>
                             <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(s)}>🗑️</button>
                           </div>
                         </td>
                       </tr>
-                    )}
-
+                    )})
+                    }
                     <tr style={{ background:'var(--gray-50)', fontWeight:700, borderTop:'2px solid var(--gray-200)' }}>
                       <td colSpan={4} style={{ paddingLeft:8 }}>Total {getSaisonLabel(saison)}</td>
                       <td style={{ textAlign:'right' }}>{fmt(semainesEnrichies.reduce((t,s) => t+(s.ca_total||0), 0))}</td>
@@ -379,6 +382,7 @@ export default function HistoriquePage() {
                       <td style={{ textAlign:'right', color:'var(--green)' }}>{fmt(semainesEnrichies.reduce((t,s) => t+s.dons, 0))}</td>
                       <td></td>
                     </tr>
+                    </>
                   </tbody>
                 </table>
               </div>
