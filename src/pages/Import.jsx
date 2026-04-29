@@ -282,7 +282,7 @@ export default function ImportPage() {
   }
 
   async function loadVentes() {
-    const { data } = await supabase.from('ventes').select('*').eq('semaine_id', semaineFilter).order('date_vente', { ascending: false })
+    const { data } = await supabase.from('ventes').select('*').eq('semaine_id', semaineFilter).order('date_vente', { ascending: false }).limit(10000)
     setVentes(data || [])
     setSelected(new Set())
   }
@@ -305,7 +305,7 @@ export default function ImportPage() {
 
       // Load existing refs
       const { data: existingVentes } = await supabase
-        .from('ventes').select('ref_transaction, description, prix_ttc').not('ref_transaction', 'is', null)
+        .from('ventes').select('ref_transaction, description, prix_ttc').not('ref_transaction', 'is', null).limit(50000)
       const refs = new Set(existingVentes?.map(v => `${v.ref_transaction}||${v.description}||${v.prix_ttc}`) || [])
       setExistingRefs(refs)
 
@@ -459,6 +459,7 @@ export default function ImportPage() {
         .select('description, quantite')
         .eq('semaine_id', sid)
         .eq('type_transaction', 'Vente')
+        .limit(10000)
 
       const qtesVendues = {}
       ventes?.forEach(v => {

@@ -26,6 +26,7 @@ export default function ProduitsPage() {
     let q = supabase
       .from('v_ca_par_produit')
       .select('*')
+      .limit(10000)
 
     if (semaineFilter) {
       q = q.eq('semaine_id', semaineFilter)
