@@ -304,13 +304,24 @@ export default function HistoriquePage() {
             <div className="card">
               <div className="card-title">Tableau récapitulatif — {getSaisonLabel(saison)}</div>
               <div className="table-wrap">
-                <table>
+                <table style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <colgroup>
+                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '140px' }} />
+                    <col style={{ width: 'auto' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '100px' }} />
+                  </colgroup>
                   <thead>
                     <tr>
                       <ThSem col="numero">Semaine</ThSem>
                       <ThSem col="date_debut">Date</ThSem>
                       <ThSem col="theme">Thème</ThSem>
-                      <ThSem col="nb_transactions" className="num">Transactions</ThSem>
+                      <ThSem col="nb_transactions" className="num">Trans.</ThSem>
                       <ThSem col="ca_total" className="num">CA total</ThSem>
                       <ThSem col="achats" className="num">Achats</ThSem>
                       <ThSem col="marge" className="num">Marge nette</ThSem>
@@ -326,8 +337,8 @@ export default function HistoriquePage() {
                       const marge = (s.ca_total || 0) - achatsSem - donsSem - frais
                       return (
                       <tr key={s.semaine_id}>
-                        <td><strong>{formatSemaine(s.annee, s.numero)}</strong></td>
-                        <td className="text-muted">{s.date_debut} → {s.date_fin}</td>
+                        <td style={{ whiteSpace:'nowrap' }}><strong>{formatSemaine(s.annee, s.numero)}</strong></td>
+                        <td className="text-muted" style={{ whiteSpace:"nowrap", fontSize:12 }}>{s.date_debut} → {s.date_fin}</td>
                         <td>{s.theme ? <span className="badge badge-green">{s.theme}</span> : <span className="text-muted">—</span>}</td>
                         <td className="num">{s.nb_transactions}</td>
                         <td className="num" style={{ fontWeight: 700 }}>{fmt(s.ca_total)}</td>
