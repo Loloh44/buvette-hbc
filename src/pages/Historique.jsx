@@ -54,6 +54,7 @@ export default function HistoriquePage() {
   const [semaines, setSemaines] = useState([])
   const [achatsData, setAchatsData] = useState([])
   const [donsData, setDonsData] = useState([])
+  const [sortiesStockData, setSortiesStockData] = useState([])
   const [loading, setLoading] = useState(true)
   const [saison, setSaison] = useState(getCurrentSaison())
   const [catData, setCatData] = useState([])
@@ -77,15 +78,17 @@ export default function HistoriquePage() {
     const rows = data || []
     setSemaines(rows)
 
-    // Achats et dons pour calcul marge
+    // Achats, dons et sorties stock pour calcul marge réelle
     if (rows.length > 0) {
       const ids = rows.map(s => s.semaine_id)
-      const [{ data: achats }, { data: dons }] = await Promise.all([
+      const [{ data: achats }, { data: dons }, { data: sortiesStock }] = await Promise.all([
         supabase.from('achats').select('semaine_id, total_ttc, article_stock_id, fournisseur').in('semaine_id', ids),
         supabase.from('dons').select('semaine_id, montant_calcule').in('semaine_id', ids).neq('statut', 'annule'),
+        supabase.from('mouvements_stock').select('semaine_id, cout_total').in('semaine_id', ids).eq('type_mouvement','sortie').eq('envoye_bilan', true),
       ])
       setAchatsData(achats || [])
       setDonsData(dons || [])
+      setSortiesStockData(sortiesStock || [])
     }
 
     // CA par catégorie par semaine
@@ -161,12 +164,24 @@ export default function HistoriquePage() {
 
   // Enrichir semaines avec marge calculée pour tri
   const semainesEnrichies = semaines.map(s => {
-    const a = achatsData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.total_ttc||0), 0)
-    const d = donsData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.montant_calcule||0), 0)
+    // Achats directs (hors stock et hors fournisseur='Stock')
+    const achatsDirects = achatsData
+      .filter(x => x.semaine_id === s.semaine_id && !x.article_stock_id && x.fournisseur !== 'Stock')
+      .reduce((t,x) => t+(x.total_ttc||0), 0)
+    // Sorties stock validées
+    const sortiesStock = sortiesStockData
+      .filter(x => x.semaine_id === s.semaine_id)
+      .reduce((t,x) => t+(x.cout_total||0), 0)
+    const dons = donsData
+      .filter(x => x.semaine_id === s.semaine_id)
+      .reduce((t,x) => t+(x.montant_calcule||0), 0)
     const frais = (s.ca_cb || 0) * 0.0175
-    return { ...s, achats: a, dons: d, marge: (s.ca_total||0) - a - d - frais }
+    const marge = (s.ca_total||0) - achatsDirects - sortiesStock - dons - frais
+    // Clé de tri combinant annee + numero pour un tri chronologique correct
+    const sortKey = (s.annee || 0) * 100 + (s.numero || 0)
+    return { ...s, achats: achatsDirects + sortiesStock, dons, marge, sortKey }
   })
-  const { sorted: sortedSemaines, Th: ThSem } = useSortable(semainesEnrichies, 'numero', 'asc')
+  const { sorted: sortedSemaines, Th: ThSem } = useSortable(semainesEnrichies, 'sortKey', 'asc')
 
   return (
     <div>
@@ -304,17 +319,17 @@ export default function HistoriquePage() {
             <div className="card">
               <div className="card-title">Tableau récapitulatif — {getSaisonLabel(saison)}</div>
               <div className="table-wrap">
-                <table style={{ tableLayout: 'fixed', width: '100%' }}>
+                <table style={{ tableLayout: 'fixed', width: '100%', borderCollapse: 'collapse' }}>
                   <colgroup>
-                    <col style={{ width: '70px' }} />
-                    <col style={{ width: '170px' }} />
-                    <col style={{ width: 'auto' }} />
-                    <col style={{ width: '60px' }} />
-                    <col style={{ width: '80px' }} />
-                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '75px' }} />
+                    <col style={{ width: '120px' }} />
+                    <col />
+                    <col style={{ width: '55px' }} />
                     <col style={{ width: '90px' }} />
-                    <col style={{ width: '70px' }} />
-                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '75px' }} />
+                    <col style={{ width: '85px' }} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -330,26 +345,23 @@ export default function HistoriquePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedSemaines.map(s => {
-                      const achatsSem = achatsData?.filter(a => a.semaine_id === s.semaine_id).reduce((sum, a) => sum + (a.total_ttc||0), 0) || 0
-                      const donsSem = donsData?.filter(d => d.semaine_id === s.semaine_id).reduce((sum, d) => sum + (d.montant_calcule||0), 0) || 0
-                      const frais = (s.ca_cb || 0) * 0.0175
-                      const marge = (s.ca_total || 0) - achatsSem - donsSem - frais
-                      return (
-                      <tr key={s.semaine_id}>
-                        <td style={{ whiteSpace:'nowrap' }}><strong>{formatSemaine(s.annee, s.numero)}</strong></td>
-                        <td className="text-muted" style={{ whiteSpace:"nowrap", fontSize:12 }}>{s.date_debut?.slice(5).split('-').reverse().join('/') + ' → ' + (s.date_fin?.slice(5).split('-').reverse().join('/') || '')}</td>
-                        <td style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:"150px" }}>{s.theme ? <span className="badge badge-green">{s.theme}</span> : <span className="text-muted">—</span>}</td>
-                        <td className="num">{s.nb_transactions}</td>
+                    {sortedSemaines.map(s => (
+                      <tr key={s.semaine_id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                        <td style={{ whiteSpace:'nowrap', fontWeight:700, color:'var(--green)' }}>{formatSemaine(s.annee, s.numero)}</td>
+                        <td style={{ whiteSpace:'nowrap', fontSize:12, color:'var(--gray-500)' }}>
+                          {s.date_debut?.slice(5).split('-').reverse().join('/') + ' → ' + (s.date_fin?.slice(5).split('-').reverse().join('/') || '')}
+                        </td>
+                        <td style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {s.theme || <span style={{ color:'var(--gray-300)' }}>—</span>}
+                        </td>
+                        <td style={{ textAlign:'right', color:'var(--gray-500)', fontSize:12 }}>{s.nb_transactions}</td>
                         <td className="num" style={{ fontWeight: 700 }}>{fmt(s.ca_total)}</td>
-                        <td className="num">{achatsSem > 0 ? fmt(achatsSem) : '—'}</td>
-                        <td className="num" style={{ fontWeight:600, color: marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(marge)}</td>
-                        <td className="num" style={{ color:'var(--green)' }}>{donsSem > 0 ? fmt(donsSem) : '—'}</td>
+                        <td style={{ textAlign:'right', fontSize:12 }}>{s.achats > 0 ? fmt(s.achats) : '—'}</td>
+                        <td style={{ textAlign:'right', fontWeight:700, color: s.marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(s.marge)}</td>
+                        <td style={{ textAlign:'right', color:'var(--green)', fontSize:12 }}>{s.dons > 0 ? fmt(s.dons) : '—'}</td>
                         <td>
-                          <div className="flex-gap">
-                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/bilan?s=${s.semaine_id}`)}>
-                              📋 Bilan
-                            </button>
+                          <div className="flex-gap no-print">
+                            <button className="btn btn-sm btn-primary" onClick={() => navigate('/bilan', { state: { semaineId: s.semaine_id } })}>📋</button>
                             <button className="btn btn-sm" onClick={() => setEditModal(s)}>✏️</button>
                             <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(s)}>🗑️</button>
                           </div>
@@ -357,18 +369,14 @@ export default function HistoriquePage() {
                       </tr>
                     )})
                     }
-                    <tr className="tr-total">
-                      <td colSpan={4}>Total {getSaisonLabel(saison)}</td>
-                      <td className="num">{fmt(totalSaison)}</td>
-                      <td className="num">{fmt(achatsData.reduce((s, a) => semaines.some(x => x.semaine_id === a.semaine_id) ? s + (a.total_ttc||0) : s, 0))}</td>
-                      <td className="num" style={{ fontWeight:700, color:'var(--green)' }}>
-                        {fmt(semaines.reduce((s, sem) => {
-                          const a = achatsData.filter(x => x.semaine_id === sem.semaine_id).reduce((t,x) => t+(x.total_ttc||0), 0)
-                          const d = donsData.filter(x => x.semaine_id === sem.semaine_id).reduce((t,x) => t+(x.montant_calcule||0), 0)
-                          return s + (sem.ca_total||0) - a - d - (sem.ca_cb||0)*0.0175
-                        }, 0))}
+                    <tr style={{ background:'var(--gray-50)', fontWeight:700, borderTop:'2px solid var(--gray-200)' }}>
+                      <td colSpan={4} style={{ paddingLeft:8 }}>Total {getSaisonLabel(saison)}</td>
+                      <td style={{ textAlign:'right' }}>{fmt(semainesEnrichies.reduce((t,s) => t+(s.ca_total||0), 0))}</td>
+                      <td style={{ textAlign:'right' }}>{fmt(semainesEnrichies.reduce((t,s) => t+s.achats, 0))}</td>
+                      <td style={{ textAlign:'right', color: semainesEnrichies.reduce((t,s) => t+s.marge, 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {fmt(semainesEnrichies.reduce((t,s) => t+s.marge, 0))}
                       </td>
-                      <td className="num">{fmt(donsData.reduce((s, d) => semaines.some(x => x.semaine_id === d.semaine_id) ? s + (d.montant_calcule||0) : s, 0))}</td>
+                      <td style={{ textAlign:'right', color:'var(--green)' }}>{fmt(semainesEnrichies.reduce((t,s) => t+s.dons, 0))}</td>
                       <td></td>
                     </tr>
                   </tbody>
