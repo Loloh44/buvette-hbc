@@ -51,6 +51,8 @@ const MOIS_NUM = [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5]
 export default function HistoriquePage() {
   const navigate = useNavigate()
   const [semaines, setSemaines] = useState([])
+  const [achatsData, setAchatsData] = useState([])
+  const [donsData, setDonsData] = useState([])
   const [loading, setLoading] = useState(true)
   const [saison, setSaison] = useState(getCurrentSaison())
   const [catData, setCatData] = useState([])
@@ -73,6 +75,17 @@ export default function HistoriquePage() {
 
     const rows = data || []
     setSemaines(rows)
+
+    // Achats et dons pour calcul marge
+    if (rows.length > 0) {
+      const ids = rows.map(s => s.semaine_id)
+      const [{ data: achats }, { data: dons }] = await Promise.all([
+        supabase.from('achats').select('semaine_id, total_ttc, article_stock_id, fournisseur').in('semaine_id', ids),
+        supabase.from('dons').select('semaine_id, montant_calcule').in('semaine_id', ids).neq('statut', 'annule'),
+      ])
+      setAchatsData(achats || [])
+      setDonsData(dons || [])
+    }
 
     // CA par catégorie par semaine
     if (rows.length > 0) {
@@ -177,7 +190,8 @@ export default function HistoriquePage() {
         </div>
       )}
 
-      <div className="page-header">
+      <style>{`@media print{.sidebar,.no-print{display:none!important}.app-layout{display:block!important}.main-content{margin-left:0!important;padding:0!important}.card{box-shadow:none!important;border:1px solid #ddd!important;break-inside:avoid}table{font-size:10px;border-collapse:collapse;width:100%}th,td{border:1px solid #ddd!important;padding:3px 6px!important}th{background:#6B3FA0!important;color:white!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}tr{break-inside:avoid}.recharts-wrapper{display:none!important}.no-print{display:none!important}@page{margin:12mm 10mm;size:A4 landscape}}`}</style>
+    <div className="page-header">
         <div>
           <p className="page-title">Historique</p>
           <p className="page-subtitle">Vue d'ensemble par saison sportive (juin → mai)</p>
@@ -188,6 +202,7 @@ export default function HistoriquePage() {
             value={saison} onChange={e => setSaison(e.target.value)}>
             {saisons.map(s => <option key={s} value={s}>{getSaisonLabel(s)}</option>)}
           </select>
+          <button className="btn no-print" onClick={() => window.print()}>🖨️ Imprimer</button>
         </div>
       </div>
 
@@ -270,24 +285,35 @@ export default function HistoriquePage() {
                       <th>Thème</th>
                       <th className="num">Transactions</th>
                       <th className="num">CA total</th>
+                      <th className="num">Achats</th>
+                      <th className="num">Marge nette</th>
+                      <th className="num">Dons</th>
                       <th className="num">Espèces</th>
                       <th className="num">CB</th>
-                      <th></th>
+                      <th className="no-print"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {semaines.map(s => (
+                    {semaines.map(s => {
+                      const achatsSem = achatsData?.filter(a => a.semaine_id === s.semaine_id).reduce((sum, a) => sum + (a.total_ttc||0), 0) || 0
+                      const donsSem = donsData?.filter(d => d.semaine_id === s.semaine_id).reduce((sum, d) => sum + (d.montant_calcule||0), 0) || 0
+                      const frais = (s.ca_cb || 0) * 0.0175
+                      const marge = (s.ca_total || 0) - achatsSem - donsSem - frais
+                      return (
                       <tr key={s.semaine_id}>
                         <td><strong>{formatSemaine(s.annee, s.numero)}</strong></td>
                         <td className="text-muted">{s.date_debut} → {s.date_fin}</td>
                         <td>{s.theme ? <span className="badge badge-green">{s.theme}</span> : <span className="text-muted">—</span>}</td>
                         <td className="num">{s.nb_transactions}</td>
                         <td className="num" style={{ fontWeight: 700 }}>{fmt(s.ca_total)}</td>
+                        <td className="num">{fmt(achatsSem) || '—'}</td>
+                        <td className="num" style={{ fontWeight:600, color: marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(marge)}</td>
+                        <td className="num" style={{ color:'var(--green)' }}>{donsSem > 0 ? fmt(donsSem) : '—'}</td>
                         <td className="num">{fmt(s.ca_especes)}</td>
                         <td className="num">{fmt(s.ca_cb)}</td>
                         <td>
                           <div className="flex-gap">
-                            <button className="btn btn-sm btn-primary" onClick={() => navigate("/bilan", { state: { semaineId: s.semaine_id } })}>
+                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/bilan?s=${s.semaine_id}`)}>
                               📋 Bilan
                             </button>
                             <button className="btn btn-sm" onClick={() => setEditModal(s)}>✏️</button>

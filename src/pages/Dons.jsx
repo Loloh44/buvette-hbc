@@ -124,8 +124,8 @@ export default function DonsPage() {
     })
 
     // Ajouter les sorties stock validées (coût réel des boissons consommées)
-    const sortiesStockList = (sortiesStock || [])
-    sortiesStockList.forEach(m => {
+    const sortiesStock = sortiesStock || []
+    sortiesStock.forEach(m => {
       const catStock = m.articles_stock?.categorie || 'Boissons'
       if (f.perimetre === 'total') {
         coutAchats += m.cout_total || 0
@@ -239,8 +239,9 @@ export default function DonsPage() {
         </div>
         <div className="flex-gap">
           <SemaineSelector value={semaineId} onChange={setSemaineId} />
+          <button className="btn no-print" onClick={() => window.print()}>🖨️ Imprimer</button>
           {semaineId && (
-            <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setEditId(null); setForm(EMPTY_DON) }}>
+            <button className="btn btn-primary no-print" onClick={() => { setShowForm(!showForm); setEditId(null); setForm(EMPTY_DON) }}>
               + Ajouter un don
             </button>
           )}
@@ -525,6 +526,29 @@ export default function DonsPage() {
           </>
         )}
       </div>
+    
+      <style>{`
+        @media print {
+          .sidebar, .no-print, button, .btn, select, input { display: none !important; }
+          .print-show { display: block !important; }
+          .app-layout { display: block !important; }
+          .main-content { margin-left: 0 !important; padding: 0 !important; }
+          .page-body { padding: 0 !important; }
+          .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px !important; }
+          table { font-size: 11px; width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #ddd !important; padding: 4px 7px !important; }
+          th { background: #6B3FA0 !important; color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          tr { break-inside: avoid; page-break-inside: avoid; }
+          .badge { border: 1px solid #ccc !important; font-size: 9px !important; }
+          .positive { color: #1A6B3C !important; }
+          .negative { color: #DC2626 !important; }
+          .tr-total td { background: #f5f5f5 !important; font-weight: 700 !important; }
+          .recharts-wrapper, .recharts-responsive-container { display: none !important; }
+          .metrics-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 8px !important; }
+          .metric-card { border: 1px solid #ddd !important; padding: 8px !important; }
+          @page { margin: 15mm 12mm; size: A4 portrait; }
+        }
+      `}</style>
     </div>
   )
 }

@@ -69,6 +69,8 @@ export default function BilanPage() {
   const [genFraisModal, setGenFraisModal] = useState(null)
   const [genEcartModal, setGenEcartModal] = useState(null)
   const { sorted: sortedProduits, Th: ThProd } = useSortable(produitsData, 'ca', 'desc')
+  const achatsForSort = bilan?.achats || []
+  const { sorted: sortedAchats, Th: ThAchat } = useSortable(achatsForSort, 'date_achat', 'asc')
 
   // Auto-select from navigation state (from Historique)
   useEffect(() => {
@@ -665,10 +667,10 @@ export default function BilanPage() {
               {(!bilan.achats || bilan.achats.length === 0) ? <p className="text-muted text-sm">Aucun achat direct saisi</p> : (
                 <table>
                   <thead>
-                    <tr><th>Date</th><th>Fournisseur</th><th>N° Facture</th><th>Article</th><th className="num">TTC</th><th>Imputations</th><th></th></tr>
+                    <tr><ThAchat col="date_achat">Date</ThAchat><ThAchat col="fournisseur">Fournisseur</ThAchat><ThAchat col="num_facture">N° Facture</ThAchat><ThAchat col="article">Article</ThAchat><ThAchat col="total_ttc" className="num">TTC</ThAchat><th>Imputations</th><th className="no-print"></th></tr>
                   </thead>
                   <tbody>
-                    {bilan.achats.map(a => (
+                    {sortedAchats.map(a => (
                       <tr key={a.id}>
                         <td>{a.date_achat}</td>
                         <td>{a.fournisseur}</td>

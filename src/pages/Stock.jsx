@@ -425,6 +425,28 @@ export default function StockPage() {
   const mvtsSemaine = semaineId
     ? mouvements.filter(m => m.semaine_id === semaineId)
     : mouvements
+
+  function exportMouvements() {
+    const rows = mvtsSemaine.map(m => ({
+      date: m.date_mouvement,
+      article: m.articles_stock?.nom || '',
+      type: m.type_mouvement,
+      quantite: m.quantite,
+      unite: m.articles_stock?.unite_stock || '',
+      cout_unitaire: m.cout_unitaire?.toFixed(4) || '',
+      cout_total: m.cout_total?.toFixed(2) || '',
+      bilan: m.envoye_bilan ? 'Envoyé' : 'En attente',
+      notes: m.notes || '',
+    }))
+    const headers = ['Date','Article','Type','Quantité','Unité','P.U. (€)','Total (€)','Bilan','Notes']
+    const bom = '\uFEFF'; const sep = ';'
+    const lines = [headers.join(sep), ...rows.map(r => Object.values(r).map(v => `"${String(v).replace(/"/g,'""')}"`).join(sep))]
+    const blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url
+    a.download = 'mouvements_stock_' + new Date().toISOString().slice(0,10) + '.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
   const sortiesNonEnvoyees = mvtsSemaine.filter(m => m.type_mouvement === 'sortie' && !m.envoye_bilan)
 
   const totalValeurStock = articles.reduce((s, a) => s + getStockArticle(a).valeurStock, 0)
@@ -495,8 +517,12 @@ export default function StockPage() {
         </div>
         <div className="flex-gap">
           <SemaineSelector value={semaineId} onChange={setSemaineId} />
+          <button className="btn no-print" onClick={() => window.print()}>🖨️ Imprimer</button>
+          {tab === 'mouvements' && (
+            <button className="btn no-print" onClick={exportMouvements}>📊 Exporter CSV</button>
+          )}
           {tab === 'articles' && (
-            <button className="btn btn-primary" onClick={() => { setShowArticleForm(true); setEditArticleId(null); setArticleForm({ nom:'', unite_stock:'fût', contenance_litres:'', methode_valorisation:'fifo', ordre:0 }) }}>
+            <button className="btn btn-primary no-print" onClick={() => { setShowArticleForm(true); setEditArticleId(null); setArticleForm({ nom:'', unite_stock:'fût', contenance_litres:'', methode_valorisation:'fifo', ordre:0 }) }}>
               + Nouvel article
             </button>
           )}

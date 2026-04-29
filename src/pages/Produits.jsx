@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSortable } from '../hooks/useSortable.jsx'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/sumup'
 
@@ -100,6 +101,27 @@ export default function ProduitsPage() {
 
   const cats = ['Tous', ...new Set(data.map(d => d.categorie).filter(Boolean))]
   const filtered = catFilter === 'Tous' ? data : data.filter(d => d.categorie === catFilter)
+  const { sorted, Th } = useSortable(filtered, 'ca', 'desc')
+
+  function exportCSV() {
+    const rows = sorted.map(d => ({
+      produit: d.produit,
+      categorie: d.categorie,
+      qte: Math.round(d.qte),
+      ca: d.ca.toFixed(2),
+      cout: d.cout.toFixed(2),
+      marge: (d.ca - d.cout).toFixed(2),
+      marge_pct: d.ca > 0 ? Math.round((d.ca - d.cout) / d.ca * 100) + '%' : '—',
+    }))
+    const headers = ['Produit','Catégorie','Qté vendue','CA (€)','Coût (€)','Marge (€)','Marge %']
+    const bom = '\uFEFF'; const sep = ';'
+    const lines = [headers.join(sep), ...rows.map(r => Object.values(r).map(v => `"${String(v).replace(/"/g,'""')}"`).join(sep))]
+    const blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url
+    a.download = 'produits_' + new Date().toISOString().slice(0,10) + '.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const totCA = filtered.reduce((s, d) => s + d.ca, 0)
   const totCout = filtered.reduce((s, d) => s + d.cout, 0)
@@ -126,6 +148,8 @@ export default function ProduitsPage() {
             <option value="">Toute la saison</option>
             {semaines.map(s => <option key={s.id} value={s.id}>S{s.numero} — {s.theme || s.date_debut}</option>)}
           </select>
+          <button className="btn no-print" onClick={() => window.print()}>🖨️ Imprimer</button>
+          <button className="btn no-print" onClick={exportCSV}>📊 Exporter CSV</button>
         </div>
       </div>
 

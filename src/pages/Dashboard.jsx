@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/sumup'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend, ComposedChart, Area } from 'recharts'
 
 const CAT_COLORS = {
   Boissons: '#1d4ed8',
@@ -81,11 +81,21 @@ export default function Dashboard() {
       .order('numero')
 
     if (toutes) {
-      setEvolution(toutes.map(s => ({
-        name: `S${s.numero}`,
-        ca: s.ca_total,
-        theme: s.theme,
-      })))
+      let caCumul = 0
+      let margeCumul = 0
+      setEvolution(toutes.map(s => {
+        caCumul += s.ca_total || 0
+        const marge = (s.ca_total || 0) - (s.total_achats || 0) - (s.total_dons || 0)
+        margeCumul += marge
+        return {
+          name: `S${s.numero}`,
+          ca: Math.round(s.ca_total || 0),
+          marge: Math.round(marge),
+          caCumul: Math.round(caCumul),
+          margeCumul: Math.round(margeCumul),
+          theme: s.theme,
+        }
+      }))
     }
 
     setLoading(false)
@@ -199,19 +209,31 @@ export default function Dashboard() {
         {/* Évolution saison */}
         {evolution.length > 1 && (
           <div className="card mt-16">
-            <div className="card-title">Évolution CA — saison {semaine.annee}</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={evolution} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+            <div className="card-title">CA & Marge hebdomadaires — saison {semaine.annee}</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
-                <Tooltip formatter={(v) => fmt(v)} />
-                <Bar dataKey="ca" radius={[4, 4, 0, 0]}>
-                  {evolution.map((entry, i) => (
-                    <Cell key={i} fill={i === evolution.length - 1 ? '#1a6b3c' : '#9ca3af'} />
-                  ))}
-                </Bar>
-              </BarChart>
+                <XAxis dataKey="name" tick={{ fontSize:11 }} />
+                <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
+                <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
+                <Legend />
+                <Bar dataKey="ca" name="CA" fill="#6B3FA0" radius={[4,4,0,0]} />
+                <Bar dataKey="marge" name="Marge" fill="#1A6B3C" radius={[4,4,0,0]} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="card mt-16">
+            <div className="card-title">CA cumulé & Marge cumulée — saison {semaine.annee}</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
+                <XAxis dataKey="name" tick={{ fontSize:11 }} />
+                <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
+                <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
+                <Legend />
+                <Area type="monotone" dataKey="caCumul" name="CA cumulé" fill="#ede7f6" stroke="#6B3FA0" strokeWidth={2} />
+                <Area type="monotone" dataKey="margeCumul" name="Marge cumulée" fill="#e8f5ee" stroke="#1A6B3C" strokeWidth={2} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         )}
