@@ -80,12 +80,22 @@ export default function Dashboard() {
       .eq('annee', sem.annee)
       .order('numero')
 
+    // Charger achats et dons pour calcul marge réelle
+    const semIds = toutes?.map(s => s.semaine_id) || []
+    const [{ data: achatsEvol }, { data: donsEvol }] = semIds.length ? await Promise.all([
+      supabase.from('achats').select('semaine_id, total_ttc').in('semaine_id', semIds),
+      supabase.from('dons').select('semaine_id, montant_calcule').in('semaine_id', semIds).neq('statut','annule'),
+    ]) : [{ data: [] }, { data: [] }]
+
     if (toutes) {
       let caCumul = 0
       let margeCumul = 0
       setEvolution(toutes.map(s => {
         caCumul += s.ca_total || 0
-        const marge = (s.ca_total || 0) - (s.total_achats || 0) - (s.total_dons || 0)
+        const achatsS = (achatsEvol || []).filter(a => a.semaine_id === s.semaine_id).reduce((t,a) => t+(a.total_ttc||0), 0)
+        const donsS = (donsEvol || []).filter(d => d.semaine_id === s.semaine_id).reduce((t,d) => t+(d.montant_calcule||0), 0)
+        const frais = (s.ca_cb || 0) * 0.0175
+        const marge = (s.ca_total || 0) - achatsS - donsS - frais
         margeCumul += marge
         return {
           name: `S${s.numero}`,

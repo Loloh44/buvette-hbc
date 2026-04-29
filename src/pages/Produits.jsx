@@ -93,7 +93,12 @@ export default function ProduitsPage() {
       }
     }
 
-    setData(Object.values(byProduit).sort((a, b) => b.ca - a.ca))
+    const dataWithMarge = Object.values(byProduit).map(d => ({
+      ...d,
+      marge: d.ca - d.cout,
+      margePct: d.ca > 0 ? (d.ca - d.cout) / d.ca : 0,
+    }))
+    setData(dataWithMarge.sort((a, b) => b.ca - a.ca))
     setLoading(false)
   }
 
@@ -129,6 +134,22 @@ export default function ProduitsPage() {
 
   return (
     <div>
+      <style>{`
+  @media print {
+    .sidebar, .no-print, aside, nav, button, .btn, select, input { display: none !important; }
+    .app-layout { display: block !important; }
+    .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+    .page-body { padding: 0 !important; }
+    .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
+    table { font-size: 11px; border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd !important; padding: 4px 7px !important; }
+    th { background: #6B3FA0 !important; color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    tr { break-inside: avoid; }
+    .positive { color: #1A6B3C !important; } .negative { color: #DC2626 !important; }
+    .tr-total td { background: #f5f5f5 !important; font-weight: 700 !important; }
+    @page { margin: 15mm 12mm; size: A4 landscape; }
+  }
+`}</style>
       <div className="page-header">
         <div>
           <p className="page-title">Produits</p>
@@ -182,17 +203,17 @@ export default function ProduitsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Produit</th>
-                    <th>Catégorie</th>
-                    <th className="num">Qté vendue</th>
-                    <th className="num">CA</th>
-                    <th className="num">Coût achat</th>
-                    <th className="num">Marge</th>
-                    <th className="num">Marge %</th>
+                    <Th col="produit">Produit</Th>
+                    <Th col="categorie">Catégorie</Th>
+                    <Th col="qte" className="num">Qté vendue</Th>
+                    <Th col="ca" className="num">CA</Th>
+                    <Th col="cout" className="num">Coût achat</Th>
+                    <Th col="marge" className="num">Marge</Th>
+                    <Th col="margePct" className="num">Marge %</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(d => {
+                  {sorted.map(d => {
                     const marge = d.ca - d.cout
                     const margePct = d.ca ? marge / d.ca : null
                     return (

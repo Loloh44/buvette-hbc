@@ -496,6 +496,20 @@ export default function StockPage() {
 
   return (
     <div>
+      <style>{`
+        @media print {
+          .sidebar, .no-print, aside, nav, button, .btn, select, input { display: none !important; }
+          .app-layout { display: block !important; }
+          .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+          .page-body { padding: 0 !important; }
+          .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
+          table { font-size: 11px; border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd !important; padding: 4px 7px !important; }
+          th { background: #6B3FA0 !important; color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          tr { break-inside: avoid; }
+          @page { margin: 15mm 12mm; size: A4 portrait; }
+        }
+      `}</style>
       {entreeModal && (
         <EntreeModal article={entreeModal} semaines={semaines}
           onSave={() => { setEntreeModal(null); load(); setAlert({ type:'success', msg:'Entrée enregistrée ✅' }) }}

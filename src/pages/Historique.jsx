@@ -158,6 +158,15 @@ export default function HistoriquePage() {
   const saisons = getSaisons()
   const cats = ['Boissons', 'Snacking', 'Boutique', 'Dons', 'Inconnu']
 
+  // Enrichir semaines avec marge calculée pour tri
+  const semainesEnrichies = semaines.map(s => {
+    const a = achatsData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.total_ttc||0), 0)
+    const d = donsData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.montant_calcule||0), 0)
+    const frais = (s.ca_cb || 0) * 0.0175
+    return { ...s, achats: a, dons: d, marge: (s.ca_total||0) - a - d - frais }
+  })
+  const { sorted: sortedSemaines, Th: ThSem } = useSortable(semainesEnrichies, 'numero', 'asc')
+
   return (
     <div>
       {/* Edit Modal */}
@@ -190,7 +199,24 @@ export default function HistoriquePage() {
         </div>
       )}
 
-      <style>{`@media print{.sidebar,.no-print{display:none!important}.app-layout{display:block!important}.main-content{margin-left:0!important;padding:0!important}.card{box-shadow:none!important;border:1px solid #ddd!important;break-inside:avoid}table{font-size:10px;border-collapse:collapse;width:100%}th,td{border:1px solid #ddd!important;padding:3px 6px!important}th{background:#6B3FA0!important;color:white!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}tr{break-inside:avoid}.recharts-wrapper{display:none!important}.no-print{display:none!important}@page{margin:12mm 10mm;size:A4 landscape}}`}</style>
+      <style>{`
+  @media print {
+    .sidebar, .no-print, button, .btn, select, input, nav, aside { display: none !important; }
+    .app-layout { display: block !important; }
+    .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+    .page-body { padding: 0 !important; }
+    .page-header .flex-gap { display: none !important; }
+    .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; margin-bottom: 10px !important; }
+    table { font-size: 10px; border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd !important; padding: 3px 6px !important; }
+    th { background: #6B3FA0 !important; color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    tr { break-inside: avoid; }
+    .recharts-wrapper, .recharts-responsive-container { display: none !important; }
+    .print-chart-table { display: table !important; }
+    @page { margin: 12mm 10mm; size: A4 landscape; }
+  }
+  .print-chart-table { display: none; }
+`}</style>
     <div className="page-header">
         <div>
           <p className="page-title">Historique</p>
@@ -280,21 +306,19 @@ export default function HistoriquePage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Semaine</th>
-                      <th>Dates</th>
-                      <th>Thème</th>
-                      <th className="num">Transactions</th>
-                      <th className="num">CA total</th>
-                      <th className="num">Achats</th>
-                      <th className="num">Marge nette</th>
-                      <th className="num">Dons</th>
-                      <th className="num">Espèces</th>
-                      <th className="num">CB</th>
+                      <ThSem col="numero">Semaine</ThSem>
+                      <ThSem col="date_debut">Date</ThSem>
+                      <ThSem col="theme">Thème</ThSem>
+                      <ThSem col="nb_transactions" className="num">Transactions</ThSem>
+                      <ThSem col="ca_total" className="num">CA total</ThSem>
+                      <ThSem col="achats" className="num">Achats</ThSem>
+                      <ThSem col="marge" className="num">Marge nette</ThSem>
+                      <ThSem col="dons" className="num">Dons</ThSem>
                       <th className="no-print"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {semaines.map(s => {
+                    {sortedSemaines.map(s => {
                       const achatsSem = achatsData?.filter(a => a.semaine_id === s.semaine_id).reduce((sum, a) => sum + (a.total_ttc||0), 0) || 0
                       const donsSem = donsData?.filter(d => d.semaine_id === s.semaine_id).reduce((sum, d) => sum + (d.montant_calcule||0), 0) || 0
                       const frais = (s.ca_cb || 0) * 0.0175
@@ -306,11 +330,9 @@ export default function HistoriquePage() {
                         <td>{s.theme ? <span className="badge badge-green">{s.theme}</span> : <span className="text-muted">—</span>}</td>
                         <td className="num">{s.nb_transactions}</td>
                         <td className="num" style={{ fontWeight: 700 }}>{fmt(s.ca_total)}</td>
-                        <td className="num">{fmt(achatsSem) || '—'}</td>
+                        <td className="num">{achatsSem > 0 ? fmt(achatsSem) : '—'}</td>
                         <td className="num" style={{ fontWeight:600, color: marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(marge)}</td>
                         <td className="num" style={{ color:'var(--green)' }}>{donsSem > 0 ? fmt(donsSem) : '—'}</td>
-                        <td className="num">{fmt(s.ca_especes)}</td>
-                        <td className="num">{fmt(s.ca_cb)}</td>
                         <td>
                           <div className="flex-gap">
                             <button className="btn btn-sm btn-primary" onClick={() => navigate(`/bilan?s=${s.semaine_id}`)}>
@@ -335,8 +357,6 @@ export default function HistoriquePage() {
                         }, 0))}
                       </td>
                       <td className="num">{fmt(donsData.reduce((s, d) => semaines.some(x => x.semaine_id === d.semaine_id) ? s + (d.montant_calcule||0) : s, 0))}</td>
-                      <td className="num">{fmt(semaines.reduce((s, sem) => s + sem.ca_especes, 0))}</td>
-                      <td className="num">{fmt(semaines.reduce((s, sem) => s + sem.ca_cb, 0))}</td>
                       <td></td>
                     </tr>
                   </tbody>
