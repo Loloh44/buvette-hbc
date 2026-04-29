@@ -90,7 +90,7 @@ export default function BilanPage() {
     setSemaine(sem)
 
     const [{ data: ventes }, { data: achats }, { data: dons }, { data: mvtsStock }] = await Promise.all([
-      supabase.from('ventes').select('prix_ttc, moyen_paiement, categorie, description, quantite, type_transaction').eq('semaine_id', semaineId),
+      supabase.from('ventes').select('prix_ttc, moyen_paiement, categorie, description, quantite, type_transaction').eq('semaine_id', semaineId).limit(10000),
       supabase.from('achats').select('*, imputations(*)').eq('semaine_id', semaineId),
       supabase.from('dons').select('*').eq('semaine_id', semaineId).neq('statut', 'annule'),
       supabase.from('mouvements_stock').select('*, articles_stock(nom, unite_stock)').eq('semaine_id', semaineId),

@@ -81,7 +81,7 @@ export default function HistoriquePage() {
     if (rows.length > 0) {
       const ids = rows.map(s => s.semaine_id)
       const [{ data: achats }, { data: dons }, { data: sortiesStock }] = await Promise.all([
-        supabase.from('achats').select('semaine_id, total_ttc, article_stock_id, fournisseur').in('semaine_id', ids),
+        supabase.from('achats').select('semaine_id, total_ttc, article_stock_id, fournisseur').in('semaine_id', ids).limit(10000),
         supabase.from('dons').select('semaine_id, montant_calcule').in('semaine_id', ids).neq('statut', 'annule'),
         supabase.from('mouvements_stock').select('semaine_id, cout_total').in('semaine_id', ids).eq('type_mouvement','sortie').eq('envoye_bilan', true),
       ])
@@ -98,6 +98,7 @@ export default function HistoriquePage() {
         .select('semaine_id, categorie, prix_ttc')
         .in('semaine_id', ids)
         .eq('type_transaction', 'Vente')
+        .limit(50000)
 
       // Par semaine
       const bySemaine = {}
@@ -402,7 +403,7 @@ function EditSemaineModal({ semaine, onClose, onSaved }) {
 
   async function loadVentes() {
     setLoadingData(true)
-    const { data } = await supabase.from('ventes').select('*').eq('semaine_id', semaine.semaine_id).order('date_vente', { ascending: false })
+    const { data } = await supabase.from('ventes').select('*').eq('semaine_id', semaine.semaine_id).order('date_vente', { ascending: false }).limit(10000)
     setVentes(data || [])
     setLoadingData(false)
   }

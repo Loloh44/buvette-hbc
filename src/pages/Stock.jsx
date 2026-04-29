@@ -324,6 +324,7 @@ export default function StockPage() {
       .select('description, quantite')
       .eq('semaine_id', semaineId)
       .eq('type_transaction', 'Vente')
+      .limit(10000)
 
     const qtesVendues = {}
     ventes?.forEach(v => {

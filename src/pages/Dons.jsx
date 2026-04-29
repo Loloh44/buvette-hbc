@@ -65,6 +65,7 @@ export default function DonsPage() {
       .select('description, categorie, quantite, prix_ttc, type_transaction')
       .eq('semaine_id', semaineId)
       .eq('type_transaction', 'Vente')
+      .limit(10000)
 
     const { data: achats } = await supabase
       .from('achats')
