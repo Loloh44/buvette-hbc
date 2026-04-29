@@ -124,8 +124,8 @@ export default function DonsPage() {
     })
 
     // Ajouter les sorties stock validées (coût réel des boissons consommées)
-    const sortiesStock = sortiesStock || []
-    sortiesStock.forEach(m => {
+    // (sortiesStock est le paramètre de la fonction)
+    ;(sortiesStock || []).forEach(m => {
       const catStock = m.articles_stock?.categorie || 'Boissons'
       if (f.perimetre === 'total') {
         coutAchats += m.cout_total || 0
