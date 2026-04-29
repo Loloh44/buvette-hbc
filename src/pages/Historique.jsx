@@ -367,8 +367,8 @@ export default function HistoriquePage() {
                           </div>
                         </td>
                       </tr>
-                    )})
-                    }
+                    )}
+
                     <tr style={{ background:'var(--gray-50)', fontWeight:700, borderTop:'2px solid var(--gray-200)' }}>
                       <td colSpan={4} style={{ paddingLeft:8 }}>Total {getSaisonLabel(saison)}</td>
                       <td style={{ textAlign:'right' }}>{fmt(semainesEnrichies.reduce((t,s) => t+(s.ca_total||0), 0))}</td>
