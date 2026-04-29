@@ -78,7 +78,6 @@ export default function HistoriquePage() {
     const rows = data || []
     setSemaines(rows)
 
-    // Achats, dons et sorties stock pour calcul marge réelle
     if (rows.length > 0) {
       const ids = rows.map(s => s.semaine_id)
       const [{ data: achats }, { data: dons }, { data: sortiesStock }] = await Promise.all([
@@ -162,22 +161,12 @@ export default function HistoriquePage() {
   const saisons = getSaisons()
   const cats = ['Boissons', 'Snacking', 'Boutique', 'Dons', 'Inconnu']
 
-  // Enrichir semaines avec marge calculée pour tri
   const semainesEnrichies = semaines.map(s => {
-    // Achats directs (hors stock et hors fournisseur='Stock')
-    const achatsDirects = achatsData
-      .filter(x => x.semaine_id === s.semaine_id && !x.article_stock_id && x.fournisseur !== 'Stock')
-      .reduce((t,x) => t+(x.total_ttc||0), 0)
-    // Sorties stock validées
-    const sortiesStock = sortiesStockData
-      .filter(x => x.semaine_id === s.semaine_id)
-      .reduce((t,x) => t+(x.cout_total||0), 0)
-    const dons = donsData
-      .filter(x => x.semaine_id === s.semaine_id)
-      .reduce((t,x) => t+(x.montant_calcule||0), 0)
+    const achatsDirects = achatsData.filter(x => x.semaine_id === s.semaine_id && !x.article_stock_id && x.fournisseur !== 'Stock').reduce((t,x) => t+(x.total_ttc||0), 0)
+    const sortiesStock = sortiesStockData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.cout_total||0), 0)
+    const dons = donsData.filter(x => x.semaine_id === s.semaine_id).reduce((t,x) => t+(x.montant_calcule||0), 0)
     const frais = (s.ca_cb || 0) * 0.0175
     const marge = (s.ca_total||0) - achatsDirects - sortiesStock - dons - frais
-    // Clé de tri combinant annee + numero pour un tri chronologique correct
     const sortKey = (s.annee || 0) * 100 + (s.numero || 0)
     return { ...s, achats: achatsDirects + sortiesStock, dons, marge, sortKey }
   })
@@ -185,6 +174,23 @@ export default function HistoriquePage() {
 
   return (
     <div>
+      <style>{`
+        @media print {
+          .sidebar, .no-print, aside, nav, button, .btn, select, input { display: none !important; }
+          .app-layout { display: block !important; }
+          .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+          .page-body { padding: 0 !important; }
+          .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
+          table { font-size: 10px; border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd !important; padding: 3px 6px !important; }
+          th { background: #6B3FA0 !important; color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          tr { break-inside: avoid; }
+          .recharts-wrapper, .recharts-responsive-container { display: none !important; }
+          .print-chart-table { display: table !important; }
+          @page { margin: 12mm 10mm; size: A4 landscape; }
+        }
+        .print-chart-table { display: none; }
+      `}</style>
       {/* Edit Modal */}
       {editModal && (
         <EditSemaineModal
@@ -215,25 +221,7 @@ export default function HistoriquePage() {
         </div>
       )}
 
-      <style>{`
-  @media print {
-    .sidebar, .no-print, button, .btn, select, input, nav, aside { display: none !important; }
-    .app-layout { display: block !important; }
-    .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
-    .page-body { padding: 0 !important; }
-    .page-header .flex-gap { display: none !important; }
-    .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; margin-bottom: 10px !important; }
-    table { font-size: 10px; border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd !important; padding: 3px 6px !important; }
-    th { background: #6B3FA0 !important; color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    tr { break-inside: avoid; }
-    .recharts-wrapper, .recharts-responsive-container { display: none !important; }
-    .print-chart-table { display: table !important; }
-    @page { margin: 12mm 10mm; size: A4 landscape; }
-  }
-  .print-chart-table { display: none; }
-`}</style>
-    <div className="page-header">
+      <div className="page-header">
         <div>
           <p className="page-title">Historique</p>
           <p className="page-subtitle">Vue d'ensemble par saison sportive (juin → mai)</p>
@@ -319,21 +307,21 @@ export default function HistoriquePage() {
             <div className="card">
               <div className="card-title">Tableau récapitulatif — {getSaisonLabel(saison)}</div>
               <div className="table-wrap">
-                <table style={{ tableLayout: 'fixed', width: '100%', borderCollapse: 'collapse' }}>
+                <table style={{ tableLayout:'fixed', width:'100%' }}>
                   <colgroup>
-                    <col style={{ width: '75px' }} />
-                    <col style={{ width: '120px' }} />
+                    <col style={{ width:'75px' }} />
+                    <col style={{ width:'120px' }} />
                     <col />
-                    <col style={{ width: '55px' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '75px' }} />
-                    <col style={{ width: '85px' }} />
+                    <col style={{ width:'55px' }} />
+                    <col style={{ width:'90px' }} />
+                    <col style={{ width:'90px' }} />
+                    <col style={{ width:'100px' }} />
+                    <col style={{ width:'70px' }} />
+                    <col style={{ width:'85px' }} />
                   </colgroup>
                   <thead>
                     <tr>
-                      <ThSem col="numero">Semaine</ThSem>
+                      <ThSem col="sortKey">Semaine</ThSem>
                       <ThSem col="date_debut">Date</ThSem>
                       <ThSem col="theme">Thème</ThSem>
                       <ThSem col="nb_transactions" className="num">Trans.</ThSem>
@@ -347,7 +335,7 @@ export default function HistoriquePage() {
                   <tbody>
                     <>
                     {sortedSemaines.map(s => (
-                      <tr key={s.semaine_id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                      <tr key={s.semaine_id} style={{ borderBottom:'1px solid var(--gray-100)' }}>
                         <td style={{ whiteSpace:'nowrap', fontWeight:700, color:'var(--green)' }}>{formatSemaine(s.annee, s.numero)}</td>
                         <td style={{ whiteSpace:'nowrap', fontSize:12, color:'var(--gray-500)' }}>
                           {s.date_debut?.slice(5).split('-').reverse().join('/') + ' → ' + (s.date_fin?.slice(5).split('-').reverse().join('/') || '')}
@@ -356,29 +344,24 @@ export default function HistoriquePage() {
                           {s.theme || <span style={{ color:'var(--gray-300)' }}>—</span>}
                         </td>
                         <td style={{ textAlign:'right', color:'var(--gray-500)', fontSize:12 }}>{s.nb_transactions}</td>
-                        <td className="num" style={{ fontWeight: 700 }}>{fmt(s.ca_total)}</td>
+                        <td style={{ textAlign:'right', fontWeight:700 }}>{fmt(s.ca_total)}</td>
                         <td style={{ textAlign:'right', fontSize:12 }}>{s.achats > 0 ? fmt(s.achats) : '—'}</td>
                         <td style={{ textAlign:'right', fontWeight:700, color: s.marge >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(s.marge)}</td>
                         <td style={{ textAlign:'right', color:'var(--green)', fontSize:12 }}>{s.dons > 0 ? fmt(s.dons) : '—'}</td>
-                        <td>
+                        <td className="no-print">
                           <div className="flex-gap">
-                            <button className="btn btn-sm btn-primary" onClick={() => navigate(`/bilan?s=${s.semaine_id}`)}>
-                              📋 Bilan
-                            </button>
+                            <button className="btn btn-sm btn-primary" onClick={() => navigate('/bilan', { state: { semaineId: s.semaine_id } })}>📋</button>
                             <button className="btn btn-sm" onClick={() => setEditModal(s)}>✏️</button>
                             <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(s)}>🗑️</button>
                           </div>
                         </td>
                       </tr>
-                    )})
-                    }
+                    ))}
                     <tr style={{ background:'var(--gray-50)', fontWeight:700, borderTop:'2px solid var(--gray-200)' }}>
                       <td colSpan={4} style={{ paddingLeft:8 }}>Total {getSaisonLabel(saison)}</td>
                       <td style={{ textAlign:'right' }}>{fmt(semainesEnrichies.reduce((t,s) => t+(s.ca_total||0), 0))}</td>
                       <td style={{ textAlign:'right' }}>{fmt(semainesEnrichies.reduce((t,s) => t+s.achats, 0))}</td>
-                      <td style={{ textAlign:'right', color: semainesEnrichies.reduce((t,s) => t+s.marge, 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                        {fmt(semainesEnrichies.reduce((t,s) => t+s.marge, 0))}
-                      </td>
+                      <td style={{ textAlign:'right', color: semainesEnrichies.reduce((t,s) => t+s.marge, 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(semainesEnrichies.reduce((t,s) => t+s.marge, 0))}</td>
                       <td style={{ textAlign:'right', color:'var(--green)' }}>{fmt(semainesEnrichies.reduce((t,s) => t+s.dons, 0))}</td>
                       <td></td>
                     </tr>
