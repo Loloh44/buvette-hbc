@@ -306,15 +306,15 @@ export default function HistoriquePage() {
               <div className="table-wrap">
                 <table style={{ tableLayout: 'fixed', width: '100%' }}>
                   <colgroup>
-                    <col style={{ width: '80px' }} />
-                    <col style={{ width: '140px' }} />
+                    <col style={{ width: '70px' }} />
+                    <col style={{ width: '170px' }} />
                     <col style={{ width: 'auto' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '90px' }} />
-                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '60px' }} />
                     <col style={{ width: '80px' }} />
-                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '80px' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '70px' }} />
+                    <col style={{ width: '80px' }} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -338,8 +338,8 @@ export default function HistoriquePage() {
                       return (
                       <tr key={s.semaine_id}>
                         <td style={{ whiteSpace:'nowrap' }}><strong>{formatSemaine(s.annee, s.numero)}</strong></td>
-                        <td className="text-muted" style={{ whiteSpace:"nowrap", fontSize:12 }}>{s.date_debut} → {s.date_fin}</td>
-                        <td>{s.theme ? <span className="badge badge-green">{s.theme}</span> : <span className="text-muted">—</span>}</td>
+                        <td className="text-muted" style={{ whiteSpace:"nowrap", fontSize:12 }}>{s.date_debut?.slice(5).split('-').reverse().join('/') + ' → ' + (s.date_fin?.slice(5).split('-').reverse().join('/') || '')}</td>
+                        <td style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:"150px" }}>{s.theme ? <span className="badge badge-green">{s.theme}</span> : <span className="text-muted">—</span>}</td>
                         <td className="num">{s.nb_transactions}</td>
                         <td className="num" style={{ fontWeight: 700 }}>{fmt(s.ca_total)}</td>
                         <td className="num">{achatsSem > 0 ? fmt(achatsSem) : '—'}</td>
