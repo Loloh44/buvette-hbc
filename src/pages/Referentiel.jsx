@@ -139,6 +139,11 @@ export default function ReferentielPage() {
 
   // Paiement form
   const [paiementForm, setPaiementForm] = useState({ nom: '', est_carte: true, ordre: 0 })
+
+  // Mappings
+  const [mappings, setMappings] = useState([])
+  const [nomsSumup, setNomsSumup] = useState([])
+  const [mappingLoading, setMappingLoading] = useState(false)
   const [editPaiementId, setEditPaiementId] = useState(null)
   const [showPaiementForm, setShowPaiementForm] = useState(false)
 
@@ -151,6 +156,7 @@ export default function ReferentielPage() {
   const { sorted, Th } = useSortable(filtered, 'nom', 'asc')
 
   useEffect(() => { load() }, [])
+  useEffect(() => { if (tab === 'mappings') loadMappings() }, [tab])
 
   async function load() {
     setLoading(true)
@@ -215,6 +221,37 @@ export default function ReferentielPage() {
     setShowPaiementForm(true)
   }
 
+  // ── Mappings ─────────────────────────────────────────────────────────────────
+  async function loadMappings() {
+    setMappingLoading(true)
+    const [{ data: maps }, { data: ventes }] = await Promise.all([
+      supabase.from('product_mappings').select('*').order('categorie').order('nom_sumup'),
+      supabase.from('ventes').select('description, categorie').not('description', 'is', null).limit(50000),
+    ])
+    setMappings(maps || [])
+    // Extraire noms SumUp distincts
+    const distinct = {}
+    ventes?.forEach(v => {
+      if (v.description) distinct[v.description] = v.categorie
+    })
+    setNomsSumup(Object.entries(distinct).map(([nom, cat]) => ({ nom, categorie: cat })).sort((a,b) => a.nom.localeCompare(b.nom)))
+    setMappingLoading(false)
+  }
+
+  async function saveMapping(nomSumup, produitOfficiel, categorie) {
+    if (!produitOfficiel) {
+      // Supprimer le mapping
+      await supabase.from('product_mappings').delete().eq('nom_sumup', nomSumup)
+    } else {
+      await supabase.from('product_mappings').upsert({
+        nom_sumup: nomSumup,
+        produit_officiel: produitOfficiel,
+        categorie: categorie,
+      }, { onConflict: 'nom_sumup' })
+    }
+    loadMappings()
+  }
+
   // ── Catégories ───────────────────────────────────────────────────────────────
   async function deleteCategorie(cat) {
     const nb = produits.filter(p => p.categorie === cat.nom).length
@@ -243,6 +280,7 @@ export default function ReferentielPage() {
     ['produits', '🍺 Produits'],
     ['categories', '📂 Catégories'],
     ['paiements', '💳 Paiements'],
+    ['mappings', '🔗 Associations SumUp'],
     ['parametres', '⚙️ Paramètres'],
   ]
 
@@ -442,6 +480,75 @@ export default function ReferentielPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MAPPINGS ── */}
+        {tab === 'mappings' && (
+          <div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+              <div>
+                <div style={{ fontWeight:600, fontSize:14 }}>Associations noms SumUp → Référentiel</div>
+                <div style={{ fontSize:12, color:'var(--gray-400)', marginTop:2 }}>
+                  Chaque nom SumUp peut être associé à un produit officiel de ton référentiel.
+                  Les lignes <span style={{ color:'var(--amber)' }}>⚠️ sans association</span> sont comptées séparément dans les stats.
+                </div>
+              </div>
+            </div>
+
+            {mappingLoading ? <div className="loading-page" style={{ minHeight:80 }}><div className="spinner"/></div> : (
+              <div className="card">
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nom SumUp</th>
+                        <th>Catégorie SumUp</th>
+                        <th>→ Produit officiel (référentiel)</th>
+                        <th>Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nomsSumup.map(({ nom, categorie: cat }) => {
+                        const mapping = mappings.find(m => m.nom_sumup === nom)
+                        const isMapped = !!mapping
+                        return (
+                          <tr key={nom} style={{ background: isMapped ? '' : 'var(--amber-light)' }}>
+                            <td style={{ fontWeight:500 }}>{nom}</td>
+                            <td><span className="badge badge-gray">{cat}</span></td>
+                            <td>
+                              <select
+                                className="form-select"
+                                style={{ maxWidth:280 }}
+                                value={mapping?.produit_officiel || ''}
+                                onChange={e => saveMapping(nom, e.target.value, cat)}
+                              >
+                                <option value="">— Aucune association —</option>
+                                {['Boissons','Snacking','Boutique','Dons','Inconnu'].map(c => (
+                                  <optgroup key={c} label={c}>
+                                    {produits.filter(p => p.categorie === c && p.actif).map(p => (
+                                      <option key={p.nom} value={p.nom}>{p.nom}</option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              {isMapped
+                                ? <span className="badge badge-green">✅ Associé</span>
+                                : <span className="badge badge-amber">⚠️ Non associé</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop:12, fontSize:12, color:'var(--gray-400)' }}>
+                  {nomsSumup.length} noms SumUp · {mappings.length} associés · {nomsSumup.length - mappings.length} sans association
+                </div>
               </div>
             )}
           </div>
