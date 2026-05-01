@@ -239,22 +239,39 @@ export default function ReferentielPage() {
   }
 
   async function saveMapping(nomSumup, produitOfficiel, categorie) {
+    // Mise à jour optimiste immédiate de l'état local
     if (!produitOfficiel) {
-      await supabase.from('product_mappings').delete().eq('nom_sumup', nomSumup)
+      setMappings(prev => prev.filter(m => m.nom_sumup !== nomSumup))
     } else {
-      // Vérifier si le mapping existe déjà
-      const { data: existing } = await supabase
-        .from('product_mappings').select('id').eq('nom_sumup', nomSumup).single()
-      if (existing?.id) {
-        await supabase.from('product_mappings')
-          .update({ produit_officiel: produitOfficiel, categorie })
-          .eq('nom_sumup', nomSumup)
-      } else {
-        await supabase.from('product_mappings')
-          .insert({ nom_sumup: nomSumup, produit_officiel: produitOfficiel, categorie })
-      }
+      setMappings(prev => {
+        const exists = prev.find(m => m.nom_sumup === nomSumup)
+        if (exists) {
+          return prev.map(m => m.nom_sumup === nomSumup ? { ...m, produit_officiel: produitOfficiel, categorie } : m)
+        }
+        return [...prev, { nom_sumup: nomSumup, produit_officiel: produitOfficiel, categorie }]
+      })
     }
-    await loadMappings()
+    // Sauvegarde en base
+    try {
+      if (!produitOfficiel) {
+        await supabase.from('product_mappings').delete().eq('nom_sumup', nomSumup)
+      } else {
+        const { data: existing } = await supabase
+          .from('product_mappings').select('id').eq('nom_sumup', nomSumup).maybeSingle()
+        if (existing?.id) {
+          await supabase.from('product_mappings')
+            .update({ produit_officiel: produitOfficiel, categorie })
+            .eq('nom_sumup', nomSumup)
+        } else {
+          await supabase.from('product_mappings')
+            .insert({ nom_sumup: nomSumup, produit_officiel: produitOfficiel, categorie })
+        }
+      }
+    } catch(e) {
+      console.error('saveMapping error:', e)
+      // Recharger depuis la base en cas d'erreur
+      loadMappings()
+    }
   }
 
   // ── Catégories ───────────────────────────────────────────────────────────────
