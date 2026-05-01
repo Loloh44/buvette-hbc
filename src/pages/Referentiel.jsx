@@ -240,16 +240,21 @@ export default function ReferentielPage() {
 
   async function saveMapping(nomSumup, produitOfficiel, categorie) {
     if (!produitOfficiel) {
-      // Supprimer le mapping
       await supabase.from('product_mappings').delete().eq('nom_sumup', nomSumup)
     } else {
-      await supabase.from('product_mappings').upsert({
-        nom_sumup: nomSumup,
-        produit_officiel: produitOfficiel,
-        categorie: categorie,
-      }, { onConflict: 'nom_sumup' })
+      // Vérifier si le mapping existe déjà
+      const { data: existing } = await supabase
+        .from('product_mappings').select('id').eq('nom_sumup', nomSumup).single()
+      if (existing?.id) {
+        await supabase.from('product_mappings')
+          .update({ produit_officiel: produitOfficiel, categorie })
+          .eq('nom_sumup', nomSumup)
+      } else {
+        await supabase.from('product_mappings')
+          .insert({ nom_sumup: nomSumup, produit_officiel: produitOfficiel, categorie })
+      }
     }
-    loadMappings()
+    await loadMappings()
   }
 
   // ── Catégories ───────────────────────────────────────────────────────────────
