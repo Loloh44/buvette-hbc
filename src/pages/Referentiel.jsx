@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { invalidateReferentiel } from '../hooks/useReferentiel.js'
 import { fmt } from '../lib/sumup'
 import { useSortable } from '../hooks/useSortable.jsx'
 
@@ -175,6 +176,7 @@ export default function ReferentielPage() {
     setParametres(paramMap)
     setLocalParams(localMap)
     setLoading(false)
+    invalidateReferentiel() // Mettre à jour le cache partagé
   }
 
   // ── Paramètres ──────────────────────────────────────────────────────────────
@@ -548,9 +550,9 @@ export default function ReferentielPage() {
                                 onChange={e => saveMapping(nom, e.target.value, cat)}
                               >
                                 <option value="">— Aucune association —</option>
-                                {['Boissons','Snacking','Boutique','Dons','Inconnu'].map(c => (
-                                  <optgroup key={c} label={c}>
-                                    {produits.filter(p => p.categorie === c && p.actif).map(p => (
+                                {categories.map(c => (
+                                  <optgroup key={c.nom} label={`${c.icone} ${c.nom}`}>
+                                    {produits.filter(p => p.categorie === c.nom && p.actif).map(p => (
                                       <option key={p.nom} value={p.nom}>{p.nom}</option>
                                     ))}
                                   </optgroup>

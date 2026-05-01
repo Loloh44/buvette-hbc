@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useReferentiel } from '../hooks/useReferentiel.js'
 import { fmt } from '../lib/sumup'
 import SemaineSelector from '../components/SemaineSelector.jsx'
 
@@ -115,7 +116,7 @@ function RepartitionModal({ achat, semaineId, produits, onSave, onClose }) {
   const totalRep = repartition.reduce((s, r) => s + r.montant, 0)
   const ecart = Math.round((totalTTC - totalRep) * 100) / 100
 
-  const cats = ['Boissons', 'Snacking', 'Boutique', 'Dons', 'Inconnu']
+  // cats will come from produits categories dynamically
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -206,7 +207,7 @@ function RepartitionModal({ achat, semaineId, produits, onSave, onClose }) {
 
             {/* ── Sélection individuelle ── */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {cats.map(cat => (
+              {[...new Set(produits.map(p => p.categorie))].map(cat => (
                 <div key={cat} style={{ width: '100%' }}>
                   <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4, marginTop: 6 }}>{cat}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

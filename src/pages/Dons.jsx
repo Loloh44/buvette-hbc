@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useReferentiel } from '../hooks/useReferentiel.js'
 import { fmt } from '../lib/sumup'
 import SemaineSelector from '../components/SemaineSelector.jsx'
 
@@ -26,15 +27,18 @@ const TYPE_ICONS = {
   pct_ca: '💰',
 }
 
-const CATEGORIES = ['Boissons', 'Snacking', 'Boutique', 'Dons', 'Inconnu']
+// CATEGORIES now loaded dynamically from useReferentiel
 const STATUT_COLORS = { calcule: 'badge-amber', verse: 'badge-green', annule: 'badge-gray' }
 const STATUT_LABELS = { calcule: '📊 Calculé', verse: '✅ Versé', annule: '❌ Annulé' }
 
 export default function DonsPage() {
+  const { ref: referentiel } = useReferentiel()
+  const categories = referentiel?.categories || []
+  const produits = referentiel?.produits || []
   const [semaineId, setSemaineId] = useState('')
   const [semaine, setSemaine] = useState(null)
   const [dons, setDons] = useState([])
-  const [produits, setProduits] = useState([])
+
   const [ventesData, setVentesData] = useState(null)
   const [achatsData, setAchatsData] = useState(null)
   const [sortiesStockData, setSortiesStockData] = useState([])
@@ -46,15 +50,12 @@ export default function DonsPage() {
   const [alert, setAlert] = useState(null)
   const [preview, setPreview] = useState(null)
 
-  useEffect(() => { loadProduits() }, [])
+
   useEffect(() => {
     if (semaineId) { loadDons(); loadSemaineData() }
   }, [semaineId])
 
-  async function loadProduits() {
-    const { data } = await supabase.from('produits').select('nom, categorie').eq('actif', true).order('categorie').order('nom')
-    setProduits(data || [])
-  }
+  // produits loaded via useReferentiel
 
   async function loadSemaineData() {
     const { data: sem } = await supabase.from('semaines').select('*').eq('id', semaineId).single()
@@ -332,11 +333,11 @@ export default function DonsPage() {
                   <div>
                     <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Produits concernés</label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {CATEGORIES.map(cat => (
+                      {categories.map(cat => (cat.nom &&
                         <div key={cat} style={{ width: '100%' }}>
                           <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4, marginTop: 8 }}>{cat}</div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {produits.filter(p => p.categorie === cat).map(p => {
+                            {produits.filter(p => p.categorie === cat.nom).map(p => {
                               const sel = form.produits_sel.includes(p.nom)
                               return (
                                 <button key={p.nom} className={'btn btn-sm' + (sel ? ' btn-primary' : '')}
