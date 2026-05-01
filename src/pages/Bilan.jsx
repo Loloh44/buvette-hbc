@@ -89,12 +89,16 @@ export default function BilanPage() {
     const { data: sem } = await supabase.from('semaines').select('*').eq('id', semaineId).single()
     setSemaine(sem)
 
-    const [{ data: ventes }, { data: achats }, { data: dons }, { data: mvtsStock }] = await Promise.all([
+    const [{ data: ventes }, { data: achats }, { data: dons }, { data: mvtsStock }, { data: mappingsData }] = await Promise.all([
       supabase.from('ventes').select('prix_ttc, moyen_paiement, categorie, description, quantite, type_transaction').eq('semaine_id', semaineId).limit(10000),
       supabase.from('achats').select('*, imputations(*)').eq('semaine_id', semaineId),
       supabase.from('dons').select('*').eq('semaine_id', semaineId).neq('statut', 'annule'),
       supabase.from('mouvements_stock').select('*, articles_stock(nom, unite_stock)').eq('semaine_id', semaineId),
+      supabase.from('product_mappings').select('nom_sumup, produit_nom, categorie'),
     ])
+    // Construire un dict de mappings pour accès rapide
+    const mappings = {}
+    mappingsData?.forEach(m => { mappings[m.nom_sumup] = { produit_nom: m.produit_nom, categorie: m.categorie } })
 
     if (!ventes) { setLoading(false); return }
 
@@ -103,7 +107,9 @@ export default function BilanPage() {
     const catStats = {}
     CATEGORIES.forEach(c => { catStats[c] = { nb: 0, ca: 0, achat: 0 } })
     ventesOnly.forEach(v => {
-      const c = v.categorie || 'Inconnu'
+      // Utiliser la catégorie du mapping si disponible
+      const mapped = mappings[v.description]
+      const c = mapped?.categorie || v.categorie || 'Inconnu'
       if (!catStats[c]) catStats[c] = { nb: 0, ca: 0, achat: 0 }
       catStats[c].nb++
       catStats[c].ca += v.prix_ttc || 0
@@ -149,8 +155,11 @@ export default function BilanPage() {
 
     const byProduit = {}
     ventesOnly.forEach(v => {
-      const key = v.description || 'Inconnu'
-      if (!byProduit[key]) byProduit[key] = { produit: key, cat: v.categorie, qte: 0, ca: 0, cout: 0 }
+      // Appliquer le mapping si disponible
+      const mapped = mappings[v.description]
+      const key = mapped?.produit_nom || v.description || 'Inconnu'
+      const cat = mapped?.categorie || v.categorie || 'Inconnu'
+      if (!byProduit[key]) byProduit[key] = { produit: key, cat, qte: 0, ca: 0, cout: 0 }
       byProduit[key].qte += v.quantite || 0
       byProduit[key].ca += v.prix_ttc || 0
     })

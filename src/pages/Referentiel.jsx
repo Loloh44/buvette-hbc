@@ -246,9 +246,9 @@ export default function ReferentielPage() {
       setMappings(prev => {
         const exists = prev.find(m => m.nom_sumup === nomSumup)
         if (exists) {
-          return prev.map(m => m.nom_sumup === nomSumup ? { ...m, produit_officiel: produitOfficiel, categorie } : m)
+          return prev.map(m => m.nom_sumup === nomSumup ? { ...m, produit_nom: produitOfficiel, categorie } : m)
         }
-        return [...prev, { nom_sumup: nomSumup, produit_officiel: produitOfficiel, categorie }]
+        return [...prev, { nom_sumup: nomSumup, produit_nom: produitOfficiel, categorie }]
       })
     }
     // Sauvegarde en base
@@ -260,11 +260,11 @@ export default function ReferentielPage() {
           .from('product_mappings').select('id').eq('nom_sumup', nomSumup).maybeSingle()
         if (existing?.id) {
           await supabase.from('product_mappings')
-            .update({ produit_officiel: produitOfficiel, categorie })
+            .update({ produit_nom: produitOfficiel, categorie })
             .eq('nom_sumup', nomSumup)
         } else {
           await supabase.from('product_mappings')
-            .insert({ nom_sumup: nomSumup, produit_officiel: produitOfficiel, categorie })
+            .insert({ nom_sumup: nomSumup, produit_nom: produitOfficiel, categorie })
         }
       }
     } catch(e) {
@@ -544,7 +544,7 @@ export default function ReferentielPage() {
                               <select
                                 className="form-select"
                                 style={{ maxWidth:280 }}
-                                value={mapping?.produit_officiel || ''}
+                                value={mapping?.produit_nom || ''}
                                 onChange={e => saveMapping(nom, e.target.value, cat)}
                               >
                                 <option value="">— Aucune association —</option>
