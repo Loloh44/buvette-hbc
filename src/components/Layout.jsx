@@ -3,17 +3,17 @@ import { supabase } from '../lib/supabase'
 import LOGO from '../assets/logo.js'
 
 const NAV = [
-  { to: '/dashboard', icon: '📊', label: 'Tableau de bord' },
-  { to: '/bilan', icon: '📋', label: 'Bilan semaine' },
-  { to: '/import', icon: '📂', label: 'Import SumUp' },
-  { to: '/achats', icon: '🛒', label: 'Saisie achats' },
-  { to: '/import-achats', icon: '📥', label: 'Import achats CSV' },
-  { to: '/stock', icon: '📦', label: 'Stock boissons' },
-  { to: '/dons', icon: '💝', label: 'Dons & Caritatif' },
-  { to: '/historique', icon: '📅', label: 'Historique' },
-  { to: '/produits', icon: '🍺', label: 'Produits' },
-  { to: '/referentiel', icon: '📚', label: 'Référentiel' },
-  { to: '/semaines', icon: '⚙️', label: 'Semaines' },
+  { to: '/semaines',      icon: '⚙️',  label: 'Semaines' },
+  { to: '/achats',        icon: '🛒',  label: 'Saisie achats' },
+  { to: '/import-achats', icon: '📥',  label: 'Import achats CSV' },
+  { to: '/import',        icon: '📂',  label: 'Import SumUp' },
+  { to: '/stock',         icon: '📦',  label: 'Stock boissons' },
+  { to: '/bilan',         icon: '📋',  label: 'Bilan semaine' },
+  { to: '/dons',          icon: '💝',  label: 'Dons & Caritatif' },
+  { to: '/produits',      icon: '🍺',  label: 'Produits' },
+  { to: '/historique',    icon: '📅',  label: 'Historique' },
+  { to: '/dashboard',     icon: '📊',  label: 'Tableau de bord' },
+  { to: '/referentiel',   icon: '📚',  label: 'Référentiel' },
 ]
 
 export default function Layout() {
