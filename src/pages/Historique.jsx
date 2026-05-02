@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useSortable } from '../hooks/useSortable.jsx'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/sumup'
+import { calculerMargeSemaine } from '../lib/calculs'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, LineChart, Line, ComposedChart, Area
@@ -78,34 +79,25 @@ export default function HistoriquePage() {
     const rows = data || []
     setSemaines(rows)
 
+    // CA par catégorie par semaine + calcul marge — tout en une seule requête groupée
     if (rows.length > 0) {
       const ids = rows.map(s => s.semaine_id)
-      const [{ data: achats }, { data: dons }, { data: sortiesStock }] = await Promise.all([
+      const [{ data: achats }, { data: dons }, { data: sortiesStock }, { data: ventes }] = await Promise.all([
         supabase.from('achats').select('semaine_id, total_ttc, article_stock_id, fournisseur').in('semaine_id', ids).limit(10000),
         supabase.from('dons').select('semaine_id, montant_calcule').in('semaine_id', ids).neq('statut', 'annule'),
-        supabase.from('mouvements_stock').select('semaine_id, cout_total').in('semaine_id', ids).eq('type_mouvement','sortie').eq('envoye_bilan', true),
+        supabase.from('mouvements_stock').select('semaine_id, cout_total, type_mouvement, envoye_bilan').in('semaine_id', ids).eq('type_mouvement', 'sortie').eq('envoye_bilan', true),
+        supabase.from('ventes').select('semaine_id, categorie, prix_ttc, type_transaction').in('semaine_id', ids).limit(50000),
       ])
       setAchatsData(achats || [])
       setDonsData(dons || [])
       setSortiesStockData(sortiesStock || [])
-    }
-
-    // CA par catégorie par semaine
-    if (rows.length > 0) {
-      const ids = rows.map(s => s.semaine_id)
-      const { data: ventes } = await supabase
-        .from('ventes')
-        .select('semaine_id, categorie, prix_ttc')
-        .in('semaine_id', ids)
-        .eq('type_transaction', 'Vente')
-        .limit(50000)
 
       // Par semaine
       const bySemaine = {}
       rows.forEach(s => {
         bySemaine[s.semaine_id] = { name: formatSemaine(s.annee, s.numero), Boissons: 0, Snacking: 0, Boutique: 0, Dons: 0, Inconnu: 0 }
       })
-      ventes?.forEach(v => {
+      ventes?.filter(v => v.type_transaction === 'Vente').forEach(v => {
         const cat = v.categorie || 'Inconnu'
         if (bySemaine[v.semaine_id]) {
           bySemaine[v.semaine_id][cat] = (bySemaine[v.semaine_id][cat] || 0) + v.prix_ttc
@@ -113,12 +105,8 @@ export default function HistoriquePage() {
       })
       setCatData(Object.values(bySemaine))
 
-      // Marge par mois
-      const { data: achatsData } = await supabase
-        .from('achats')
-        .select('semaine_id, total_ttc')
-        .in('semaine_id', ids)
-
+      // Marge par mois — utilise calculerMargeSemaine pour cohérence avec le Bilan
+      // (achats, dons, sortiesStock déjà chargés plus haut)
       const margeParMois = {}
       MOIS_SAISON.forEach((m, i) => { margeParMois[i] = { name: m, ca: 0, marge: 0, achats: 0 } })
 
@@ -127,11 +115,16 @@ export default function HistoriquePage() {
         const mois = date.getMonth() + 1
         const idx = MOIS_NUM.indexOf(mois)
         if (idx === -1) return
-        margeParMois[idx].ca += s.ca_total || 0
-        const achatsSem = achatsData?.filter(a => a.semaine_id === s.semaine_id).reduce((sum, a) => sum + a.total_ttc, 0) || 0
-        const frais = (s.ca_cb || 0) * 0.0175
-        margeParMois[idx].marge += (s.ca_total || 0) - achatsSem - frais
-        margeParMois[idx].achats += achatsSem
+        const { ca, marge, achatsDirects } = calculerMargeSemaine(
+          s.semaine_id,
+          ventes || [],
+          achats || [],
+          sortiesStock || [],
+          dons || []
+        )
+        margeParMois[idx].ca += ca
+        margeParMois[idx].marge += marge
+        margeParMois[idx].achats += achatsDirects
       })
 
       // Marge cumulée
