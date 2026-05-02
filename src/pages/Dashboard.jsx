@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { fmt } from '../lib/sumup'
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend, ComposedChart, Area } from 'recharts'
+import { calculerMargeSemaine } from '../lib/calculs'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  Legend, ComposedChart, Area
+} from 'recharts'
 
 const CAT_COLORS = {
   Boissons: '#1d4ed8',
@@ -19,9 +23,7 @@ export default function Dashboard() {
   const [topProduits, setTopProduits] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadDashboard()
-  }, [])
+  useEffect(() => { loadDashboard() }, [])
 
   async function loadDashboard() {
     setLoading(true)
@@ -38,68 +40,99 @@ export default function Dashboard() {
     if (!sem) { setLoading(false); return }
     setSemaine(sem)
 
-    // Stats ventes semaine
+    // Stats ventes dernière semaine
     const { data: ventes } = await supabase
       .from('ventes')
-      .select('prix_ttc, moyen_paiement, categorie, description, quantite, type_transaction')
+      .select('prix_ttc, moyen_paiement, categorie, description, quantite, type_transaction, semaine_id')
       .eq('semaine_id', sem.id)
-      .eq('type_transaction', 'Vente')
+      .limit(10000)
 
     if (ventes) {
-      const ca = ventes.reduce((s, v) => s + (v.prix_ttc || 0), 0)
-      const esp = ventes.filter(v => v.moyen_paiement === 'Espèces').reduce((s, v) => s + v.prix_ttc, 0)
+      const ventesOnly = ventes.filter(v => v.type_transaction === 'Vente')
+      const ca = ventesOnly.reduce((s, v) => s + (v.prix_ttc || 0), 0)
+      const esp = ventesOnly.filter(v => v.moyen_paiement === 'Espèces').reduce((s, v) => s + v.prix_ttc, 0)
       const cb = ca - esp
 
-      setStats({ ca, esp, cb, nb: ventes.length })
+      setStats({ ca, esp, cb, nb: ventesOnly.length })
 
       // Par catégorie
       const cats = {}
-      ventes.forEach(v => {
+      ventesOnly.forEach(v => {
         const c = v.categorie || 'Inconnu'
         cats[c] = (cats[c] || 0) + v.prix_ttc
       })
-      setCatData(Object.entries(cats).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value))
+      setCatData(
+        Object.entries(cats)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+      )
 
       // Top produits
       const prods = {}
-      ventes.forEach(v => {
+      ventesOnly.forEach(v => {
         if (!prods[v.description]) prods[v.description] = { ca: 0, qte: 0 }
         prods[v.description].ca += v.prix_ttc
         prods[v.description].qte += v.quantite || 0
       })
       setTopProduits(
-        Object.entries(prods).map(([nom, d]) => ({ nom, ...d }))
-          .sort((a, b) => b.ca - a.ca).slice(0, 8)
+        Object.entries(prods)
+          .map(([nom, d]) => ({ nom, ...d }))
+          .sort((a, b) => b.ca - a.ca)
+          .slice(0, 8)
       )
     }
 
-    // Évolution sur la saison
+    // Évolution sur la saison — utilise calculerMargeSemaine pour cohérence avec le Bilan
     const { data: toutes } = await supabase
       .from('v_bilan_semaine')
       .select('*')
       .eq('annee', sem.annee)
       .order('numero')
 
-    // Charger achats et dons pour calcul marge réelle
     const semIds = toutes?.map(s => s.semaine_id) || []
-    const [{ data: achatsEvol }, { data: donsEvol }] = semIds.length ? await Promise.all([
-      supabase.from('achats').select('semaine_id, total_ttc').in('semaine_id', semIds),
-      supabase.from('dons').select('semaine_id, montant_calcule').in('semaine_id', semIds).neq('statut','annule'),
-    ]) : [{ data: [] }, { data: [] }]
 
-    if (toutes) {
+    if (semIds.length) {
+      const [
+        { data: ventesEvol },
+        { data: achatsEvol },
+        { data: donsEvol },
+        { data: sortiesEvol },
+      ] = await Promise.all([
+        supabase.from('ventes')
+          .select('semaine_id, prix_ttc, type_transaction')
+          .in('semaine_id', semIds)
+          .limit(50000),
+        supabase.from('achats')
+          .select('semaine_id, total_ttc, article_stock_id, fournisseur')
+          .in('semaine_id', semIds)
+          .limit(10000),
+        supabase.from('dons')
+          .select('semaine_id, montant_calcule')
+          .in('semaine_id', semIds)
+          .neq('statut', 'annule'),
+        supabase.from('mouvements_stock')
+          .select('semaine_id, cout_total, type_mouvement, envoye_bilan')
+          .in('semaine_id', semIds)
+          .eq('type_mouvement', 'sortie')
+          .eq('envoye_bilan', true),
+      ])
+
       let caCumul = 0
       let margeCumul = 0
-      setEvolution(toutes.map(s => {
-        caCumul += s.ca_total || 0
-        const achatsS = (achatsEvol || []).filter(a => a.semaine_id === s.semaine_id).reduce((t,a) => t+(a.total_ttc||0), 0)
-        const donsS = (donsEvol || []).filter(d => d.semaine_id === s.semaine_id).reduce((t,d) => t+(d.montant_calcule||0), 0)
-        const frais = (s.ca_cb || 0) * 0.0175
-        const marge = (s.ca_total || 0) - achatsS - donsS - frais
+
+      setEvolution((toutes || []).map(s => {
+        const { ca, marge } = calculerMargeSemaine(
+          s.semaine_id,
+          ventesEvol || [],
+          achatsEvol || [],
+          sortiesEvol || [],
+          donsEvol || []
+        )
+        caCumul += ca
         margeCumul += marge
         return {
           name: `S${s.numero}`,
-          ca: Math.round(s.ca_total || 0),
+          ca: Math.round(ca),
           marge: Math.round(marge),
           caCumul: Math.round(caCumul),
           margeCumul: Math.round(margeCumul),
@@ -222,24 +255,24 @@ export default function Dashboard() {
             <div className="card mt-16">
               <div className="card-title">CA & Marge hebdomadaires — saison {semaine.annee}</div>
               <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
+                <ComposedChart data={evolution} margin={{ top: 16, right: 16, bottom: 4, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                  <XAxis dataKey="name" tick={{ fontSize:11 }} />
-                  <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                   <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
                   <Legend />
-                  <Bar dataKey="ca" name="CA" fill="#6B3FA0" radius={[4,4,0,0]} />
-                  <Bar dataKey="marge" name="Marge" fill="#1A6B3C" radius={[4,4,0,0]} />
+                  <Bar dataKey="ca" name="CA" fill="#6B3FA0" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="marge" name="Marge" fill="#1A6B3C" radius={[4, 4, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
             <div className="card mt-16">
               <div className="card-title">CA cumulé & Marge cumulée — saison {semaine.annee}</div>
               <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={evolution} margin={{ top:16, right:16, bottom:4, left:8 }}>
+                <ComposedChart data={evolution} margin={{ top: 16, right: 16, bottom: 4, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                  <XAxis dataKey="name" tick={{ fontSize:11 }} />
-                  <YAxis tick={{ fontSize:11 }} tickFormatter={v => `${v}€`} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                   <Tooltip formatter={v => fmt(v)} labelFormatter={(l, p) => p?.[0]?.payload?.theme || l} />
                   <Legend />
                   <Area type="monotone" dataKey="caCumul" name="CA cumulé" fill="#ede7f6" stroke="#6B3FA0" strokeWidth={2} />
